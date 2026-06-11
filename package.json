@@ -1,9 +1,18 @@
 {
   "name": "@symbiosis-finance/wdk-protocol-swidge-symbiosis",
   "version": "1.0.0-beta.1",
-  "description": "WDK module to perform cross-chain swaps via the symbiosis protocol.",
-  "keywords": ["wdk", "protocol", "swidge", "symbiosis"],
-  "author": "allush &lt;al.lushnikov@yandex.ru&gt;",
+  "description": "WDK swidge protocol module for any-to-any cross-chain swaps and bridging via the Symbiosis protocol.",
+  "keywords": [
+    "wdk",
+    "protocol",
+    "swidge",
+    "swap",
+    "bridge",
+    "cross-chain",
+    "symbiosis"
+  ],
+  "homepage": "https://symbiosis.finance",
+  "author": "allush <al.lushnikov@yandex.ru>",
   "license": "Apache-2.0",
   "main": "index.js",
   "type": "module",
@@ -16,7 +25,7 @@
     "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage"
   },
   "dependencies": {
-    "@tetherto/wdk-wallet": "^1.0.0-beta.2",
+    "@tetherto/wdk-wallet": "^1.0.0-beta.10",
     "bare-node-runtime": "^1.1.4"
   },
   "devDependencies": {

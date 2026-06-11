@@ -1,4 +1,4 @@
-// Copyright 2026 allush &lt;al.lushnikov@yandex.ru&gt;
+// Copyright 2026 allush <al.lushnikov@yandex.ru>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.

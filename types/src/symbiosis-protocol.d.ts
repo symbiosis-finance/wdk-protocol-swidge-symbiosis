@@ -24,58 +24,122 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      */
     constructor(account: IWalletAccount, config?: SymbiosisProtocolConfig);
     /**
-     * The symbiosis protocol configuration.
+     * The Symbiosis API client.
      *
      * @protected
-     * @type {SymbiosisProtocolConfig}
+     * @type {SymbiosisApiClient}
      */
-    protected _config: SymbiosisProtocolConfig;
+    protected _api: SymbiosisApiClient;
     /**
-     * Quotes the estimated costs and output of a swidge operation.
-     * Returns a non-binding quote; the actual execution is performed
-     * by {@link swidge}.
+     * Cache for chain and token discovery responses.
      *
+     * @protected
+     * @type {Object<string, { timestamp: number, promise: Promise<any> }>}
+     */
+    protected _discoveryCache: {
+        [x: string]: {
+            timestamp: number;
+            promise: Promise<any>;
+        };
+    };
+    /**
+     * Builds a Symbiosis `/v2/quote` and `/v2/swap` request payload from swidge options.
+     *
+     * @protected
      * @param {SwidgeOptions} options - The swidge options.
-     * @returns {Promise<SwidgeQuote>} The quoted swidge details.
+     * @returns {Promise<{ body: Object, tokenIn: Object, tokenOut: Object }>} The request payload and the resolved tokens.
+     * @throws {Error} If the options are invalid or the route cannot be resolved.
      */
-    quoteSwidge(options: SwidgeOptions): Promise<SwidgeQuote>;
+    protected _buildSwapRequest(options: SwidgeOptions): Promise<{
+        body: any;
+        tokenIn: any;
+        tokenOut: any;
+    }>;
     /**
-     * Executes a swidge operation.
+     * Maps Symbiosis fee entries to the shared swidge fee shape.
      *
-     * @param {SwidgeOptions} options - The swidge options.
-     * @param {SwidgeProtocolConfig} [config] - Optional provider-specific execution configuration.
-     * @returns {Promise<SwidgeResult>} The swidge execution result.
+     * @protected
+     * @param {Array<Object>} fees - The Symbiosis fee entries.
+     * @returns {SwidgeFee[]} The mapped fees.
      */
-    swidge(options: SwidgeOptions, config?: SwidgeProtocolConfig): Promise<SwidgeResult>;
+    protected _mapFees(fees: Array<any>): SwidgeFee[];
     /**
-     * Retrieves the current status of an in-flight swidge.
+     * Verifies the quoted fees against the configured fee caps.
      *
-     * @param {string} id - The swidge execution identifier returned by swidge.
-     * @param {SwidgeStatusOptions} [options] - Optional hints to assist provider lookups.
-     * @returns {Promise<SwidgeStatusResult>} The current swidge status.
-     * @throws {Error} If the id is invalid, or no swidge exists with the given identifier.
+     * Fees are valued in USD when price data is available; otherwise the fee amount,
+     * normalized by token decimals, is compared against the normalized input amount,
+     * which is only an approximation for fees denominated in tokens whose unit value
+     * differs from the input token.
+     *
+     * @protected
+     * @param {Object} response - The Symbiosis swap response.
+     * @param {Object} body - The request payload.
+     * @param {Object} tokenIn - The resolved input token.
+     * @param {SwidgeProtocolConfig} [config] - Optional execution configuration overriding the instance fee caps.
+     * @throws {Error} If a configured fee cap is exceeded.
      */
-    getSwidgeStatus(id: string, options?: SwidgeStatusOptions): Promise<SwidgeStatusResult>;
+    protected _checkFeeLimits(response: any, body: any, tokenIn: any, config?: SwidgeProtocolConfig): void;
     /**
-     * Retrieves the chains supported by the provider for swidge operations.
+     * Resolves a chain identifier (Symbiosis chain id or chain name) to a Symbiosis chain.
      *
-     * @returns {Promise<SwidgeSupportedChain[]>} The supported chains.
+     * @protected
+     * @param {string | number} identifier - The chain identifier.
+     * @returns {Promise<{ id: number, name: string }>} The resolved chain.
+     * @throws {Error} If the chain is not supported by Symbiosis.
      */
-    getSupportedChains(): Promise<SwidgeSupportedChain[]>;
+    protected _resolveChain(identifier: string | number): Promise<{
+        id: number;
+        name: string;
+    }>;
     /**
-     * Retrieves the tokens supported by the provider for swidge operations.
+     * Resolves a token identifier to a Symbiosis token on the given chain.
      *
-     * @param {SwidgeSupportedTokensOptions} [options] - Optional filters for chain- or route-scoped token discovery.
-     * @returns {Promise<SwidgeSupportedToken[]>} The supported tokens.
+     * Accepts a token contract address (EVM, TON or Solana format), a token symbol,
+     * or a native-token alias (`''`, `'native'`, or the zero address).
+     *
+     * @protected
+     * @param {{ id: number, name: string }} chain - The chain to resolve the token on.
+     * @param {string} identifier - The token identifier.
+     * @returns {Promise<Object>} The resolved Symbiosis token.
+     * @throws {Error} If the token is not in the Symbiosis token list.
      */
-    getSupportedTokens(options?: SwidgeSupportedTokensOptions): Promise<SwidgeSupportedToken[]>;
+    protected _resolveToken(chain: {
+        id: number;
+        name: string;
+    }, identifier: string): Promise<any>;
+    /**
+     * Fetches the supported chains, caching the response.
+     *
+     * @protected
+     * @returns {Promise<Array<Object>>} The supported chains.
+     */
+    protected _getChains(): Promise<Array<any>>;
+    /**
+     * Fetches the supported tokens, caching the response.
+     *
+     * @protected
+     * @returns {Promise<Array<Object>>} The supported tokens.
+     */
+    protected _getTokens(): Promise<Array<any>>;
+    /**
+     * Returns a cached discovery response, refreshing it when stale.
+     *
+     * @protected
+     * @param {string} key - The cache key.
+     * @param {() => Promise<any>} fetcher - The fetcher producing a fresh response.
+     * @returns {Promise<any>} The cached or fresh response.
+     */
+    protected _cachedDiscovery(key: string, fetcher: () => Promise<any>): Promise<any>;
 }
 export type IWalletAccount = import("@tetherto/wdk-wallet").IWalletAccount;
 export type IWalletAccountReadOnly = import("@tetherto/wdk-wallet").IWalletAccountReadOnly;
 export type SwidgeOptions = import("@tetherto/wdk-wallet/protocols").SwidgeOptions;
 export type SwidgeQuote = import("@tetherto/wdk-wallet/protocols").SwidgeQuote;
 export type SwidgeResult = import("@tetherto/wdk-wallet/protocols").SwidgeResult;
+export type SwidgeFee = import("@tetherto/wdk-wallet/protocols").SwidgeFee;
+export type SwidgeTransaction = import("@tetherto/wdk-wallet/protocols").SwidgeTransaction;
 export type SwidgeProtocolConfig = import("@tetherto/wdk-wallet/protocols").SwidgeProtocolConfig;
+export type SwidgeStatus = import("@tetherto/wdk-wallet/protocols").SwidgeStatus;
 export type SwidgeStatusOptions = import("@tetherto/wdk-wallet/protocols").SwidgeStatusOptions;
 export type SwidgeStatusResult = import("@tetherto/wdk-wallet/protocols").SwidgeStatusResult;
 export type SwidgeSupportedChain = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedChain;
@@ -83,8 +147,38 @@ export type SwidgeSupportedToken = import("@tetherto/wdk-wallet/protocols").Swid
 export type SwidgeSupportedTokensOptions = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedTokensOptions;
 export type SymbiosisProtocolConfig = {
     /**
-     * - The default slippage tolerance as a decimal (e.g., 0.01 for 1%).
+     * - The Symbiosis chain of the bound wallet account: either the numeric
+     * Symbiosis chain id or the chain name as returned by {@link SymbiosisProtocol#getSupportedChains}(e.g., `1`, `'Ethereum'`, `'TON'`, `'Bitcoin'`). Required to quote and execute swidge operations.
+     */
+    chain?: string | number;
+    /**
+     * - The base URL of the Symbiosis API (defaults to `https://api.symbiosis.finance/crosschain`).
+     */
+    apiUrl?: string;
+    /**
+     * - The default slippage tolerance as a decimal (e.g., 0.01 for 1%). Defaults to 0.02.
      */
     defaultSlippage?: number;
+    /**
+     * - The EVM address of a registered Symbiosis partner to receive a share of the protocol fee.
+     */
+    partnerAddress?: string;
+    /**
+     * - The default refund address for deposit-address routes (e.g., swaps from Bitcoin).
+     */
+    refundAddress?: string;
+    /**
+     * - Skip the automatic ERC-20 allowance approval before executing an EVM route.
+     */
+    skipApproval?: boolean;
+    /**
+     * - Maximum acceptable network fee in basis points of the input amount.
+     */
+    maxNetworkFeeBps?: number | bigint;
+    /**
+     * - Maximum acceptable protocol fee in basis points of the input amount.
+     */
+    maxProtocolFeeBps?: number | bigint;
 };
 import { SwidgeProtocol } from '@tetherto/wdk-wallet/protocols';
+import SymbiosisApiClient from './api-client.js';
