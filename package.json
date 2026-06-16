@@ -17,6 +17,15 @@
   "main": "index.js",
   "type": "module",
   "types": "./types",
+  "files": [
+    "index.js",
+    "bare.js",
+    "src",
+    "types"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build:types": "tsc",
     "lint": "standard",
