@@ -12,6 +12,13 @@
     "symbiosis"
   ],
   "homepage": "https://symbiosis.finance",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis.git"
+  },
+  "bugs": {
+    "url": "https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/issues"
+  },
   "author": "allush <allush@symbiosis.finance>",
   "license": "Apache-2.0",
   "main": "index.js",
