@@ -184,7 +184,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
     switch (response.type) {
       case 'evm': {
         const isNative = body.tokenAmountIn.address === ''
-        if (!isNative && !this._config.skipApproval) {
+        if (!isNative && !this._config.skipApproval && await this._needsApproval(account, body.tokenAmountIn.address, response.approveTo, amount)) {
           if (typeof account.approve !== 'function') {
             throw new Error('Cannot approve the input token: the wallet account does not support ERC-20 approvals.')
           }
@@ -195,6 +195,9 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
           })
           if (approval?.hash) {
             transactions.push({ hash: approval.hash, chain: srcChainId, type: 'approval' })
+            // Wait for the approval to be mined: the swap transaction below spends the
+            // freshly granted allowance and would revert if it is not yet confirmed.
+            await this._waitForReceipt(account, approval.hash)
           }
         }
 
@@ -252,8 +255,10 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    *   (`'<sourceChainId>:<sourceTransactionHash>'`), or a bare source transaction hash
    *   combined with the `fromChain` status option.
    * @param {SwidgeStatusOptions} [options] - Optional hints to assist provider lookups.
-   * @returns {Promise<SwidgeStatusResult>} The current swidge status.
-   * @throws {Error} If the id is invalid, or no swidge exists with the given identifier.
+   * @returns {Promise<SwidgeStatusResult>} The current swidge status. A source transaction that
+   *   the API has not indexed yet (HTTP 404, common for ~30s after submission) is reported as
+   *   `pending` rather than throwing, so it cannot be distinguished from a genuinely unknown id.
+   * @throws {Error} If the id is invalid.
    */
   async getSwidgeStatus (id, options) {
     if (typeof id !== 'string' || id.length === 0) {
@@ -279,8 +284,12 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
     try {
       response = await this._api.getTxStatus(chainId, hash)
     } catch (err) {
+      // A freshly submitted source transaction is not indexed by the API for a while
+      // (~30s), during which the status endpoint returns 404. Treat this as pending —
+      // consistent with the not-found status code (-1) — so a polling consumer can keep
+      // tracking instead of failing, and surface the known source transaction.
       if (err.status === 404) {
-        throw new Error(`No swidge operation found for id '${id}'.`)
+        return { status: 'pending', transactions: [{ hash, chain: chainId, type: 'source' }] }
       }
       throw err
     }
@@ -493,6 +502,60 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
         throw new Error(`The quoted ${type} fee (${bps.toFixed(2)} bps) exceeds the configured maximum of ${cap} bps.`)
       }
     }
+  }
+
+  /**
+   * Determines whether an ERC-20 approval transaction is required before executing an EVM route.
+   *
+   * When the wallet account can read allowances (EVM accounts expose {@link getAllowance}),
+   * the existing allowance is compared against the input amount and the approval is skipped
+   * when it already covers the spend. Accounts without allowance reads (e.g., non-EVM ones,
+   * for which the concept does not apply) always approve, preserving the previous behavior.
+   *
+   * @protected
+   * @param {Object} account - The bound wallet account.
+   * @param {string} token - The input token address.
+   * @param {string} spender - The address that will spend the token (the route's `approveTo`).
+   * @param {bigint} amount - The input amount in base units.
+   * @returns {Promise<boolean>} Whether an approval transaction is required.
+   */
+  async _needsApproval (account, token, spender, amount) {
+    if (typeof account.getAllowance !== 'function') return true
+    try {
+      const allowance = await account.getAllowance(token, spender)
+      return BigInt(allowance) < amount
+    } catch {
+      // If the allowance cannot be read, fall back to approving unconditionally.
+      return true
+    }
+  }
+
+  /**
+   * Waits for a transaction to be mined by polling the wallet account for its receipt.
+   *
+   * @protected
+   * @param {Object} account - The bound wallet account.
+   * @param {string} hash - The transaction hash to wait for.
+   * @param {{ intervalMs?: number, timeoutMs?: number }} [options] - Polling options.
+   * @returns {Promise<Object | undefined>} The transaction receipt, if available.
+   * @throws {Error} If the transaction reverts, or the receipt does not appear before the timeout.
+   */
+  async _waitForReceipt (account, hash, { intervalMs = 2000, timeoutMs = 180000 } = {}) {
+    if (typeof account.getTransactionReceipt !== 'function') return undefined
+
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      const receipt = await account.getTransactionReceipt(hash)
+      if (receipt) {
+        if (receipt.status === 0 || receipt.status === 0n || receipt.status === false) {
+          throw new Error(`Transaction '${hash}' reverted.`)
+        }
+        return receipt
+      }
+      await new Promise(resolve => setTimeout(resolve, intervalMs))
+    }
+
+    throw new Error(`Timed out waiting for transaction '${hash}' to be mined.`)
   }
 
   /**

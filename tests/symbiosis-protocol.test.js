@@ -211,6 +211,76 @@ describe('SymbiosisProtocol', () => {
       })
     })
 
+    test('should skip approval when the existing allowance already covers the amount', async () => {
+      account.getAllowance = jest.fn(async () => 100000000n)
+
+      await protocol.swidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 100000000n
+      })
+
+      expect(account.getAllowance).toHaveBeenCalledWith(USDT_ETH, '0xApproveGateway')
+      expect(account.approve).not.toHaveBeenCalled()
+    })
+
+    test('should approve when the existing allowance is insufficient', async () => {
+      account.getAllowance = jest.fn(async () => 1n)
+
+      await protocol.swidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 100000000n
+      })
+
+      expect(account.approve).toHaveBeenCalled()
+    })
+
+    test('should approve when the allowance cannot be read', async () => {
+      account.getAllowance = jest.fn(async () => { throw new Error('no provider') })
+
+      await protocol.swidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 100000000n
+      })
+
+      expect(account.approve).toHaveBeenCalled()
+    })
+
+    test('should wait for the approval receipt before sending the swap transaction', async () => {
+      const order = []
+      account.approve = jest.fn(async () => { order.push('approve'); return { hash: '0xapprovehash' } })
+      account.getTransactionReceipt = jest.fn(async () => { order.push('receipt'); return { status: 1 } })
+      account.sendTransaction = jest.fn(async () => { order.push('send'); return { hash: '0xsourcehash' } })
+
+      await protocol.swidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 100000000n
+      })
+
+      expect(account.getTransactionReceipt).toHaveBeenCalledWith('0xapprovehash')
+      expect(order).toEqual(['approve', 'receipt', 'send'])
+    })
+
+    test('should throw if the approval transaction reverts', async () => {
+      account.getTransactionReceipt = jest.fn(async () => ({ status: 0 }))
+
+      await expect(protocol.swidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 100000000n
+      })).rejects.toThrow('reverted')
+
+      expect(account.sendTransaction).not.toHaveBeenCalled()
+    })
+
     test('should not approve when the input token is native', async () => {
       await protocol.swidge({
         fromToken: '',
@@ -380,15 +450,19 @@ describe('SymbiosisProtocol', () => {
       expect(status.status).toBe('pending')
     })
 
-    test('should throw if no operation exists for the given id', async () => {
+    test('should treat a 404 as pending while the source transaction is not yet indexed', async () => {
       global.fetch = mockFetch({
         '/v1/chains': CHAINS,
         '/v2/tokens': TOKENS,
-        '/v2/tx/1/0xmissing': { __http: true, status: 404, body: {} }
+        '/v2/tx/1/0xpending': { __http: true, status: 404, body: {} }
       })
 
-      await expect(protocol.getSwidgeStatus('1:0xmissing'))
-        .rejects.toThrow("No swidge operation found for id '1:0xmissing'")
+      const status = await protocol.getSwidgeStatus('1:0xpending')
+
+      expect(status).toEqual({
+        status: 'pending',
+        transactions: [{ hash: '0xpending', chain: 1, type: 'source' }]
+      })
     })
   })
 

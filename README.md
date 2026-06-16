@@ -136,10 +136,12 @@ Any chain can be used as the **destination** regardless of this table.
 
 The `id` returned by `swidge()` has the form `'<sourceChainId>:<sourceTxHash>'` and is self-contained: no extra status options are needed.
 
+A just-submitted source transaction is not indexed by the API for a while (~30s), during which the status endpoint returns HTTP 404. `getSwidgeStatus()` reports this as `pending` (returning the known source transaction) rather than throwing, so a polling consumer can keep tracking right after `swidge()`. As a consequence, a genuinely unknown id is also reported as `pending` rather than raising an error.
+
 ## Notes and limitations
 
 - **Exact-out is not supported**: pass `fromTokenAmount`; `toTokenAmount` throws.
-- **ERC-20 approvals** are sent unconditionally before each EVM route (the WDK account interface exposes no allowance reads). Set `skipApproval: true` if you manage allowances yourself.
+- **ERC-20 approvals**: when the wallet account can read allowances (EVM accounts expose `getAllowance`), the approval is skipped if the existing allowance already covers the amount; otherwise it is sent before the EVM route. Accounts without allowance reads always approve. Set `skipApproval: true` to suppress approvals entirely if you manage allowances yourself.
 - **Fee caps** are valued in USD when the API provides price data; otherwise amounts normalized by token decimals are compared directly, which is approximate for fee tokens whose unit value differs from the input token.
 - **Bitcoin routes** call `/v2/swap`, which is rate-limited to 1 request per second by the Symbiosis API.
 - Discovery responses (`/v1/chains`, `/v2/tokens`) are cached for 10 minutes per protocol instance.
