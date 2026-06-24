@@ -80,6 +80,36 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      */
     protected _checkFeeLimits(response: any, body: any, tokenIn: any, config?: SwidgeProtocolConfig): void;
     /**
+     * Determines whether an ERC-20 approval transaction is required before executing an EVM route.
+     *
+     * When the wallet account can read allowances (EVM accounts expose {@link getAllowance}),
+     * the existing allowance is compared against the input amount and the approval is skipped
+     * when it already covers the spend. Accounts without allowance reads (e.g., non-EVM ones,
+     * for which the concept does not apply) always approve, preserving the previous behavior.
+     *
+     * @protected
+     * @param {Object} account - The bound wallet account.
+     * @param {string} token - The input token address.
+     * @param {string} spender - The address that will spend the token (the route's `approveTo`).
+     * @param {bigint} amount - The input amount in base units.
+     * @returns {Promise<boolean>} Whether an approval transaction is required.
+     */
+    protected _needsApproval(account: any, token: string, spender: string, amount: bigint): Promise<boolean>;
+    /**
+     * Waits for a transaction to be mined by polling the wallet account for its receipt.
+     *
+     * @protected
+     * @param {Object} account - The bound wallet account.
+     * @param {string} hash - The transaction hash to wait for.
+     * @param {{ intervalMs?: number, timeoutMs?: number }} [options] - Polling options.
+     * @returns {Promise<Object | undefined>} The transaction receipt, if available.
+     * @throws {Error} If the transaction reverts, or the receipt does not appear before the timeout.
+     */
+    protected _waitForReceipt(account: any, hash: string, { intervalMs, timeoutMs }?: {
+        intervalMs?: number;
+        timeoutMs?: number;
+    }): Promise<any | undefined>;
+    /**
      * Resolves a chain identifier (Symbiosis chain id or chain name) to a Symbiosis chain.
      *
      * @protected

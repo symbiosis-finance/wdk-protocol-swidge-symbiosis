@@ -1,5 +1,7 @@
 # @symbiosis-finance/wdk-protocol-swidge-symbiosis
 
+[![Built with WDK](https://img.shields.io/badge/Built%20with-WDK-50AF95?style=flat-square)](https://wdk.tether.io)
+
 WDK swidge protocol module for [Symbiosis](https://symbiosis.finance) — any-to-any cross-chain swaps and bridging across 50+ networks, including EVM chains, TON, Bitcoin, Tron and Solana.
 
 The module implements the [WDK swidge protocol interface](https://docs.wdk.tether.io/sdk/swidge-modules) (`SwidgeProtocol` from `@tetherto/wdk-wallet/protocols`) on top of the public [Symbiosis REST API](https://api.symbiosis.finance/crosschain/docs/) (`/v2/quote`, `/v2/swap`, `/v2/tx`). No heavyweight chain SDK dependencies: quoting and routing happen server-side, transactions are signed and broadcast by your WDK wallet account.
