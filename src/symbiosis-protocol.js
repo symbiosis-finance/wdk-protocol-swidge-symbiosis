@@ -34,6 +34,30 @@ import SymbiosisApiClient from './api-client.js'
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeSupportedToken} SwidgeSupportedToken */
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeSupportedTokensOptions} SwidgeSupportedTokensOptions */
 
+/** @typedef {import('./api-client.js').SymbiosisChain} SymbiosisChain */
+/** @typedef {import('./api-client.js').SymbiosisToken} SymbiosisToken */
+/** @typedef {import('./api-client.js').SymbiosisFeeEntry} SymbiosisFeeEntry */
+/** @typedef {import('./api-client.js').SymbiosisSwapRequest} SymbiosisSwapRequest */
+/** @typedef {import('./api-client.js').SymbiosisSwapResponse} SymbiosisSwapResponse */
+
+/**
+ * @typedef {Object} DiscoveryCacheEntry
+ * @property {number} timestamp - The epoch milliseconds at which the response was cached.
+ * @property {Promise<any>} promise - The in-flight or settled discovery response.
+ */
+
+/**
+ * @typedef {Object} SwapRequestBuildResult
+ * @property {SymbiosisSwapRequest} body - The request payload for `/v2/quote` and `/v2/swap`.
+ * @property {SymbiosisToken} tokenIn - The resolved input token.
+ * @property {SymbiosisToken} tokenOut - The resolved output token.
+ */
+
+/**
+ * @typedef {Object} TransactionReceipt
+ * @property {number | bigint | boolean} [status] - The transaction status; a zero/false value indicates a reverted transaction.
+ */
+
 /**
  * @typedef {Object} SymbiosisProtocolConfig
  * @property {string | number} [chain] - The Symbiosis chain of the bound wallet account: either the numeric
@@ -121,7 +145,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      * Cache for chain and token discovery responses.
      *
      * @protected
-     * @type {Object<string, { timestamp: number, promise: Promise<any> }>}
+     * @type {Record<string, DiscoveryCacheEntry>}
      */
     this._discoveryCache = {}
   }
@@ -374,7 +398,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    *
    * @protected
    * @param {SwidgeOptions} options - The swidge options.
-   * @returns {Promise<{ body: Object, tokenIn: Object, tokenOut: Object }>} The request payload and the resolved tokens.
+   * @returns {Promise<SwapRequestBuildResult>} The request payload and the resolved tokens.
    * @throws {Error} If the options are invalid or the route cannot be resolved.
    */
   async _buildSwapRequest (options) {
@@ -447,7 +471,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * Maps Symbiosis fee entries to the shared swidge fee shape.
    *
    * @protected
-   * @param {Array<Object>} fees - The Symbiosis fee entries.
+   * @param {SymbiosisFeeEntry[]} fees - The Symbiosis fee entries.
    * @returns {SwidgeFee[]} The mapped fees.
    */
   _mapFees (fees) {
@@ -470,9 +494,9 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * differs from the input token.
    *
    * @protected
-   * @param {Object} response - The Symbiosis swap response.
-   * @param {Object} body - The request payload.
-   * @param {Object} tokenIn - The resolved input token.
+   * @param {SymbiosisSwapResponse} response - The Symbiosis swap response.
+   * @param {SymbiosisSwapRequest} body - The request payload.
+   * @param {SymbiosisToken} tokenIn - The resolved input token.
    * @param {SwidgeProtocolConfig} [config] - Optional execution configuration overriding the instance fee caps.
    * @throws {Error} If a configured fee cap is exceeded.
    */
@@ -513,7 +537,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * for which the concept does not apply) always approve, preserving the previous behavior.
    *
    * @protected
-   * @param {Object} account - The bound wallet account.
+   * @param {IWalletAccount} account - The bound wallet account.
    * @param {string} token - The input token address.
    * @param {string} spender - The address that will spend the token (the route's `approveTo`).
    * @param {bigint} amount - The input amount in base units.
@@ -534,10 +558,11 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * Waits for a transaction to be mined by polling the wallet account for its receipt.
    *
    * @protected
-   * @param {Object} account - The bound wallet account.
+   * @param {IWalletAccount} account - The bound wallet account.
    * @param {string} hash - The transaction hash to wait for.
-   * @param {{ intervalMs?: number, timeoutMs?: number }} [options] - Polling options.
-   * @returns {Promise<Object | undefined>} The transaction receipt, if available.
+   * @param {{ intervalMs?: number, timeoutMs?: number }} [options] - Polling options: the poll
+   *   interval (default: 2,000 ms) and the overall timeout (default: 180,000 ms).
+   * @returns {Promise<TransactionReceipt | undefined>} The transaction receipt, if available.
    * @throws {Error} If the transaction reverts, or the receipt does not appear before the timeout.
    */
   async _waitForReceipt (account, hash, { intervalMs = 2000, timeoutMs = 180000 } = {}) {
@@ -563,7 +588,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    *
    * @protected
    * @param {string | number} identifier - The chain identifier.
-   * @returns {Promise<{ id: number, name: string }>} The resolved chain.
+   * @returns {Promise<SymbiosisChain>} The resolved chain.
    * @throws {Error} If the chain is not supported by Symbiosis.
    */
   async _resolveChain (identifier) {
@@ -590,9 +615,9 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * or a native-token alias (`''`, `'native'`, or the zero address).
    *
    * @protected
-   * @param {{ id: number, name: string }} chain - The chain to resolve the token on.
+   * @param {SymbiosisChain} chain - The chain to resolve the token on.
    * @param {string} identifier - The token identifier.
-   * @returns {Promise<Object>} The resolved Symbiosis token.
+   * @returns {Promise<SymbiosisToken>} The resolved Symbiosis token.
    * @throws {Error} If the token is not in the Symbiosis token list.
    */
   async _resolveToken (chain, identifier) {
@@ -623,7 +648,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * Fetches the supported chains, caching the response.
    *
    * @protected
-   * @returns {Promise<Array<Object>>} The supported chains.
+   * @returns {Promise<SymbiosisChain[]>} The supported chains.
    */
   async _getChains () {
     return this._cachedDiscovery('chains', () => this._api.getChains())
@@ -633,7 +658,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * Fetches the supported tokens, caching the response.
    *
    * @protected
-   * @returns {Promise<Array<Object>>} The supported tokens.
+   * @returns {Promise<SymbiosisToken[]>} The supported tokens.
    */
   async _getTokens () {
     return this._cachedDiscovery('tokens', () => this._api.getTokens())
