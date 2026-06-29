@@ -1,0 +1,85 @@
+{
+  "name": "@symbiosis-finance/wdk-protocol-swidge-symbiosis",
+  "version": "1.1.0",
+  "description": "WDK swidge protocol module for any-to-any cross-chain swaps and bridging via the Symbiosis protocol.",
+  "keywords": [
+    "wdk",
+    "protocol",
+    "swidge",
+    "swap",
+    "bridge",
+    "cross-chain",
+    "symbiosis"
+  ],
+  "homepage": "https://symbiosis.finance",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis.git"
+  },
+  "bugs": {
+    "url": "https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/issues"
+  },
+  "author": "allush <allush@symbiosis.finance>",
+  "license": "Apache-2.0",
+  "main": "index.js",
+  "type": "module",
+  "types": "./types",
+  "files": [
+    "index.js",
+    "bare.js",
+    "src",
+    "types",
+    "assets",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build:types": "tsc",
+    "lint": "standard",
+    "lint:fix": "standard --fix",
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage",
+    "e2e": "node tests/e2e/swidge-arbitrum.js"
+  },
+  "dependencies": {
+    "@tetherto/wdk-wallet": "^1.0.0-beta.11",
+    "bare-node-runtime": "^1.1.4"
+  },
+  "devDependencies": {
+    "@tetherto/wdk-wallet-evm": "^1.0.0-beta.14",
+    "cross-env": "^7.0.3",
+    "jest": "^29.7.0",
+    "standard": "^17.1.2",
+    "typescript": "^5.8.3"
+  },
+  "overrides": {
+    "ethers": "^6.17.0",
+    "js-yaml": "^4.2.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "bare": "./bare.js",
+      "default": "./index.js"
+    },
+    "./package": {
+      "default": "./package.json"
+    }
+  },
+  "standard": {
+    "ignore": [
+      "bare.js",
+      "tests/**/*.js"
+    ]
+  },
+  "jest": {
+    "coverageProvider": "v8",
+    "collectCoverageFrom": [
+      "index.js",
+      "src/**/*.js"
+    ]
+  }
+}
