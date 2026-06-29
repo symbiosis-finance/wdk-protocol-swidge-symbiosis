@@ -7,9 +7,24 @@ const API_URL = 'https://api.symbiosis.finance/crosschain'
 const USDT_ETH = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
 const USDC_ARB = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'
 const USDT_ARB = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9'
+const TON_USDT_ADDRESS = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs'
 const SENDER = '0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6'
 
-const CHAINS = [
+const DUMMY_META_ROUTER = '0xb80fdacfbedc1b8e02f0c5d6e6e7e9e0f1a2b3c4'
+const DUMMY_APPROVE_GATEWAY = '0xa2c1e4f6b8d0a2c4e6f8b0d2a4c6e8f0b2d4a6c8'
+const DUMMY_CALLDATA = '0x415565b0000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7'
+const DUMMY_SOURCE_TX_HASH = '0x9e1c0b6f3a2d4e5f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f'
+const DUMMY_APPROVE_TX_HASH = '0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b'
+const DUMMY_DEST_TX_HASH = '0x7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d'
+const DUMMY_REFUND_TX_HASH = '0x2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c'
+const DUMMY_PENDING_TX_HASH = '0x3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d'
+const DUMMY_BTC_DEPOSIT_ADDRESS = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq'
+const DUMMY_BTC_REFUND_ADDRESS = 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh'
+const DUMMY_TON_ROUTER_ADDRESS = 'EQAvDfWFG0oYX19jwNDNBBL1rKNT9XfaGP9HyTb5nb2Eml6y'
+const DUMMY_TON_PAYLOAD = 'te6cckEBAQEAAgAAAEysuc0='
+const DUMMY_TON_MESSAGE_AMOUNT = '300000000'
+
+const DUMMY_CHAINS = [
   { id: 1, name: 'Ethereum', explorer: 'https://etherscan.io', icon: '', hasDepository: true },
   { id: 42161, name: 'Arbitrum One', explorer: 'https://arbiscan.io', icon: '', hasDepository: true },
   { id: 3652501241, name: 'Bitcoin', explorer: 'https://mempool.space', icon: '', hasDepository: false },
@@ -17,7 +32,7 @@ const CHAINS = [
   { id: 728126428, name: 'Tron', explorer: 'https://tronscan.org', icon: '', hasDepository: false }
 ]
 
-const TOKENS = [
+const DUMMY_TOKENS = [
   { symbol: 'ETH', name: 'Ethereum', address: '', chainId: 1, decimals: 18, priceUsd: 2000 },
   { symbol: 'USDT', name: 'Tether USD', address: USDT_ETH, chainId: 1, decimals: 6, priceUsd: 1 },
   { symbol: 'USDC', name: 'USDC', address: USDC_ARB, chainId: 42161, decimals: 6, priceUsd: 1 },
@@ -31,15 +46,15 @@ const TOKENS = [
     chainId: 85918,
     decimals: 6,
     priceUsd: 1,
-    attributes: { ton: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs' }
+    attributes: { ton: TON_USDT_ADDRESS }
   }
 ]
 
-const EVM_SWAP_RESPONSE = {
+const DUMMY_EVM_SWAP_RESPONSE = {
   type: 'evm',
   kind: 'crosschain-swap',
-  tx: { chainId: 1, to: '0xMetaRouter', data: '0xcalldata', value: '0' },
-  approveTo: '0xApproveGateway',
+  tx: { chainId: 1, to: DUMMY_META_ROUTER, data: DUMMY_CALLDATA, value: '0' },
+  approveTo: DUMMY_APPROVE_GATEWAY,
   fees: [
     {
       provider: 'symbiosis',
@@ -58,6 +73,15 @@ const EVM_SWAP_RESPONSE = {
   estimatedTime: 43,
   labels: []
 }
+
+const DUMMY_MAPPED_FEES = [{
+  type: 'protocol',
+  amount: 250000n,
+  token: USDC_ARB,
+  chain: 42161,
+  included: true,
+  description: 'Cross-chain fee'
+}]
 
 function mockFetch (routes) {
   return jest.fn(async (url, init = {}) => {
@@ -78,22 +102,22 @@ function mockFetch (routes) {
   })
 }
 
-describe('SymbiosisProtocol', () => {
+describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
   let account,
       protocol
 
   beforeEach(() => {
     account = {
       getAddress: jest.fn(async () => SENDER),
-      sendTransaction: jest.fn(async () => ({ hash: '0xsourcehash', fee: 1n })),
-      approve: jest.fn(async () => ({ hash: '0xapprovehash', fee: 1n }))
+      sendTransaction: jest.fn(async () => ({ hash: DUMMY_SOURCE_TX_HASH, fee: 1n })),
+      approve: jest.fn(async () => ({ hash: DUMMY_APPROVE_TX_HASH, fee: 1n }))
     }
 
     global.fetch = mockFetch({
-      '/v1/chains': CHAINS,
-      '/v2/tokens': TOKENS,
-      '/v2/quote': EVM_SWAP_RESPONSE,
-      '/v2/swap': EVM_SWAP_RESPONSE
+      '/v1/chains': DUMMY_CHAINS,
+      '/v2/tokens': DUMMY_TOKENS,
+      '/v2/quote': DUMMY_EVM_SWAP_RESPONSE,
+      '/v2/swap': DUMMY_EVM_SWAP_RESPONSE
     })
 
     protocol = new SymbiosisProtocol(account, { chain: 'Ethereum' })
@@ -113,14 +137,7 @@ describe('SymbiosisProtocol', () => {
         fromTokenAmount: 100000000n,
         toTokenAmount: 99263949n,
         toTokenAmountMin: 97269184n,
-        fees: [{
-          type: 'protocol',
-          amount: 250000n,
-          token: USDC_ARB,
-          chain: 42161,
-          included: true,
-          description: 'Cross-chain fee'
-        }],
+        fees: DUMMY_MAPPED_FEES,
         estimatedDuration: 43,
         priceImpact: -0.0013
       })
@@ -190,23 +207,24 @@ describe('SymbiosisProtocol', () => {
 
       expect(account.approve).toHaveBeenCalledWith({
         token: USDT_ETH,
-        spender: '0xApproveGateway',
+        spender: DUMMY_APPROVE_GATEWAY,
         amount: 100000000n
       })
       expect(account.sendTransaction).toHaveBeenCalledWith({
-        to: '0xMetaRouter',
+        to: DUMMY_META_ROUTER,
         value: 0n,
-        data: '0xcalldata'
+        data: DUMMY_CALLDATA
       })
-      expect(result).toMatchObject({
-        id: '1:0xsourcehash',
-        hash: '0xsourcehash',
+      expect(result).toEqual({
+        id: `1:${DUMMY_SOURCE_TX_HASH}`,
+        hash: DUMMY_SOURCE_TX_HASH,
+        fees: DUMMY_MAPPED_FEES,
         fromTokenAmount: 100000000n,
         toTokenAmount: 99263949n,
         toTokenAmountMin: 97269184n,
         transactions: [
-          { hash: '0xapprovehash', chain: 1, type: 'approval' },
-          { hash: '0xsourcehash', chain: 1, type: 'source' }
+          { hash: DUMMY_APPROVE_TX_HASH, chain: 1, type: 'approval' },
+          { hash: DUMMY_SOURCE_TX_HASH, chain: 1, type: 'source' }
         ]
       })
     })
@@ -221,7 +239,7 @@ describe('SymbiosisProtocol', () => {
         fromTokenAmount: 100000000n
       })
 
-      expect(account.getAllowance).toHaveBeenCalledWith(USDT_ETH, '0xApproveGateway')
+      expect(account.getAllowance).toHaveBeenCalledWith(USDT_ETH, DUMMY_APPROVE_GATEWAY)
       expect(account.approve).not.toHaveBeenCalled()
     })
 
@@ -235,7 +253,11 @@ describe('SymbiosisProtocol', () => {
         fromTokenAmount: 100000000n
       })
 
-      expect(account.approve).toHaveBeenCalled()
+      expect(account.approve).toHaveBeenCalledWith({
+        token: USDT_ETH,
+        spender: DUMMY_APPROVE_GATEWAY,
+        amount: 100000000n
+      })
     })
 
     test('should approve when the allowance cannot be read', async () => {
@@ -248,14 +270,18 @@ describe('SymbiosisProtocol', () => {
         fromTokenAmount: 100000000n
       })
 
-      expect(account.approve).toHaveBeenCalled()
+      expect(account.approve).toHaveBeenCalledWith({
+        token: USDT_ETH,
+        spender: DUMMY_APPROVE_GATEWAY,
+        amount: 100000000n
+      })
     })
 
     test('should wait for the approval receipt before sending the swap transaction', async () => {
       const order = []
-      account.approve = jest.fn(async () => { order.push('approve'); return { hash: '0xapprovehash' } })
+      account.approve = jest.fn(async () => { order.push('approve'); return { hash: DUMMY_APPROVE_TX_HASH } })
       account.getTransactionReceipt = jest.fn(async () => { order.push('receipt'); return { status: 1 } })
-      account.sendTransaction = jest.fn(async () => { order.push('send'); return { hash: '0xsourcehash' } })
+      account.sendTransaction = jest.fn(async () => { order.push('send'); return { hash: DUMMY_SOURCE_TX_HASH } })
 
       await protocol.swidge({
         fromToken: USDT_ETH,
@@ -264,7 +290,7 @@ describe('SymbiosisProtocol', () => {
         fromTokenAmount: 100000000n
       })
 
-      expect(account.getTransactionReceipt).toHaveBeenCalledWith('0xapprovehash')
+      expect(account.getTransactionReceipt).toHaveBeenCalledWith(DUMMY_APPROVE_TX_HASH)
       expect(order).toEqual(['approve', 'receipt', 'send'])
     })
 
@@ -294,17 +320,17 @@ describe('SymbiosisProtocol', () => {
 
     test('should perform a BTC deposit-address swidge operation', async () => {
       global.fetch = mockFetch({
-        '/v1/chains': CHAINS,
-        '/v2/tokens': TOKENS,
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
         '/v2/swap': {
-          ...EVM_SWAP_RESPONSE,
+          ...DUMMY_EVM_SWAP_RESPONSE,
           type: 'btc',
-          tx: { depositAddress: 'bc1qdepositaddress', expiresAt: '2026-06-12T00:00:00Z' }
+          tx: { depositAddress: DUMMY_BTC_DEPOSIT_ADDRESS, expiresAt: '2026-06-12T00:00:00Z' }
         }
       })
       const btcProtocol = new SymbiosisProtocol(account, {
         chain: 'Bitcoin',
-        refundAddress: 'bc1qrefundaddress'
+        refundAddress: DUMMY_BTC_REFUND_ADDRESS
       })
 
       const result = await btcProtocol.swidge({
@@ -316,29 +342,39 @@ describe('SymbiosisProtocol', () => {
       })
 
       expect(account.sendTransaction).toHaveBeenCalledWith({
-        to: 'bc1qdepositaddress',
+        to: DUMMY_BTC_DEPOSIT_ADDRESS,
         value: 50000n
       })
-      expect(result.id).toBe('3652501241:0xsourcehash')
+      expect(result).toEqual({
+        id: `3652501241:${DUMMY_SOURCE_TX_HASH}`,
+        hash: DUMMY_SOURCE_TX_HASH,
+        fees: DUMMY_MAPPED_FEES,
+        fromTokenAmount: 50000n,
+        toTokenAmount: 99263949n,
+        toTokenAmountMin: 97269184n,
+        transactions: [
+          { hash: DUMMY_SOURCE_TX_HASH, chain: 3652501241, type: 'source' }
+        ]
+      })
     })
 
     test('should perform a TON swidge operation by sending route messages', async () => {
       global.fetch = mockFetch({
-        '/v1/chains': CHAINS,
-        '/v2/tokens': TOKENS,
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
         '/v2/swap': {
-          ...EVM_SWAP_RESPONSE,
+          ...DUMMY_EVM_SWAP_RESPONSE,
           type: 'ton',
           tx: {
             validUntil: 1780000000,
-            messages: [{ address: 'EQRouterAddress', amount: '300000000', payload: 'base64payload' }]
+            messages: [{ address: DUMMY_TON_ROUTER_ADDRESS, amount: DUMMY_TON_MESSAGE_AMOUNT, payload: DUMMY_TON_PAYLOAD }]
           }
         }
       })
       const tonProtocol = new SymbiosisProtocol(account, { chain: 'TON' })
 
       const result = await tonProtocol.swidge({
-        fromToken: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs',
+        fromToken: TON_USDT_ADDRESS,
         toToken: USDC_ARB,
         toChain: 42161,
         recipient: SENDER,
@@ -346,18 +382,28 @@ describe('SymbiosisProtocol', () => {
       })
 
       expect(account.sendTransaction).toHaveBeenCalledWith({
-        to: 'EQRouterAddress',
+        to: DUMMY_TON_ROUTER_ADDRESS,
         value: 300000000,
-        body: 'base64payload'
+        body: DUMMY_TON_PAYLOAD
       })
-      expect(result.id).toBe('85918:0xsourcehash')
+      expect(result).toEqual({
+        id: `85918:${DUMMY_SOURCE_TX_HASH}`,
+        hash: DUMMY_SOURCE_TX_HASH,
+        fees: DUMMY_MAPPED_FEES,
+        fromTokenAmount: 1000000n,
+        toTokenAmount: 99263949n,
+        toTokenAmountMin: 97269184n,
+        transactions: [
+          { hash: DUMMY_SOURCE_TX_HASH, chain: 85918, type: 'source' }
+        ]
+      })
     })
 
-    test('should throw on route types not executable through WDK accounts', async () => {
+    test('should throw on a Tron source route not executable through WDK accounts', async () => {
       global.fetch = mockFetch({
-        '/v1/chains': CHAINS,
-        '/v2/tokens': TOKENS,
-        '/v2/swap': { ...EVM_SWAP_RESPONSE, type: 'tron' }
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        '/v2/swap': { ...DUMMY_EVM_SWAP_RESPONSE, type: 'tron' }
       })
 
       await expect(protocol.swidge({
@@ -366,6 +412,21 @@ describe('SymbiosisProtocol', () => {
         toChain: 42161,
         fromTokenAmount: 100000000n
       })).rejects.toThrow("'tron' transaction")
+    })
+
+    test('should throw on a Solana source route not executable through WDK accounts', async () => {
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        '/v2/swap': { ...DUMMY_EVM_SWAP_RESPONSE, type: 'solana' }
+      })
+
+      await expect(protocol.swidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 100000000n
+      })).rejects.toThrow("'solana' transaction")
     })
 
     test('should throw if the swidge fees exceed the max protocol fee configuration', async () => {
@@ -378,12 +439,25 @@ describe('SymbiosisProtocol', () => {
     })
 
     test('should pass when the swidge fees are below the fee caps', async () => {
-      await expect(protocol.swidge({
+      const result = await protocol.swidge({
         fromToken: USDT_ETH,
         toToken: USDC_ARB,
         toChain: 42161,
         fromTokenAmount: 100000000n
-      }, { maxProtocolFeeBps: 50, maxNetworkFeeBps: 50 })).resolves.toBeDefined()
+      }, { maxProtocolFeeBps: 50, maxNetworkFeeBps: 50 })
+
+      expect(result).toEqual({
+        id: `1:${DUMMY_SOURCE_TX_HASH}`,
+        hash: DUMMY_SOURCE_TX_HASH,
+        fees: DUMMY_MAPPED_FEES,
+        fromTokenAmount: 100000000n,
+        toTokenAmount: 99263949n,
+        toTokenAmountMin: 97269184n,
+        transactions: [
+          { hash: DUMMY_APPROVE_TX_HASH, chain: 1, type: 'approval' },
+          { hash: DUMMY_SOURCE_TX_HASH, chain: 1, type: 'source' }
+        ]
+      })
     })
 
     test('should throw if the account is read-only', async () => {
@@ -401,67 +475,72 @@ describe('SymbiosisProtocol', () => {
   describe('getSwidgeStatus', () => {
     test('should successfully return the status of a completed operation', async () => {
       global.fetch = mockFetch({
-        '/v1/chains': CHAINS,
-        '/v2/tokens': TOKENS,
-        '/v2/tx/1/0xsourcehash': {
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        [`/v2/tx/1/${DUMMY_SOURCE_TX_HASH}`]: {
           status: { code: 0, text: 'Success' },
-          txIn: { hash: '0xsourcehash', chainId: 1 },
-          tx: { hash: '0xdesthash', chainId: 42161 }
+          txIn: { hash: DUMMY_SOURCE_TX_HASH, chainId: 1 },
+          tx: { hash: DUMMY_DEST_TX_HASH, chainId: 42161 }
         }
       })
 
-      const status = await protocol.getSwidgeStatus('1:0xsourcehash')
+      const status = await protocol.getSwidgeStatus(`1:${DUMMY_SOURCE_TX_HASH}`)
 
       expect(status).toEqual({
         status: 'completed',
         transactions: [
-          { hash: '0xsourcehash', chain: 1, type: 'source' },
-          { hash: '0xdesthash', chain: 42161, type: 'destination' }
+          { hash: DUMMY_SOURCE_TX_HASH, chain: 1, type: 'source' },
+          { hash: DUMMY_DEST_TX_HASH, chain: 42161, type: 'destination' }
         ]
       })
     })
 
     test('should map reverted operations to the refunded status', async () => {
       global.fetch = mockFetch({
-        '/v1/chains': CHAINS,
-        '/v2/tokens': TOKENS,
-        '/v2/tx/1/0xsourcehash': {
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        [`/v2/tx/1/${DUMMY_SOURCE_TX_HASH}`]: {
           status: { code: 3, text: 'Reverted' },
-          txIn: { hash: '0xsourcehash', chainId: 1 },
-          tx: { hash: '0xreverthash', chainId: 1 }
+          txIn: { hash: DUMMY_SOURCE_TX_HASH, chainId: 1 },
+          tx: { hash: DUMMY_REFUND_TX_HASH, chainId: 1 }
         }
       })
 
-      const status = await protocol.getSwidgeStatus('1:0xsourcehash')
+      const status = await protocol.getSwidgeStatus(`1:${DUMMY_SOURCE_TX_HASH}`)
 
-      expect(status.status).toBe('refunded')
-      expect(status.transactions[1]).toEqual({ hash: '0xreverthash', chain: 1, type: 'refund' })
+      expect(status).toEqual({
+        status: 'refunded',
+        transactions: [
+          { hash: DUMMY_SOURCE_TX_HASH, chain: 1, type: 'source' },
+          { hash: DUMMY_REFUND_TX_HASH, chain: 1, type: 'refund' }
+        ]
+      })
     })
 
     test('should resolve the source chain from status options when the id is a bare hash', async () => {
       global.fetch = mockFetch({
-        '/v1/chains': CHAINS,
-        '/v2/tokens': TOKENS,
-        '/v2/tx/42161/0xsourcehash': { status: { code: 1, text: 'Pending' } }
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        [`/v2/tx/42161/${DUMMY_SOURCE_TX_HASH}`]: { status: { code: 1, text: 'Pending' } }
       })
 
-      const status = await protocol.getSwidgeStatus('0xsourcehash', { fromChain: 'Arbitrum One' })
+      const status = await protocol.getSwidgeStatus(DUMMY_SOURCE_TX_HASH, { fromChain: 'Arbitrum One' })
 
-      expect(status.status).toBe('pending')
+      expect(status).toEqual({ status: 'pending', transactions: [] })
     })
 
     test('should treat a 404 as pending while the source transaction is not yet indexed', async () => {
       global.fetch = mockFetch({
-        '/v1/chains': CHAINS,
-        '/v2/tokens': TOKENS,
-        '/v2/tx/1/0xpending': { __http: true, status: 404, body: {} }
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        [`/v2/tx/1/${DUMMY_PENDING_TX_HASH}`]: { __http: true, status: 404, body: {} }
       })
 
-      const status = await protocol.getSwidgeStatus('1:0xpending')
+      const status = await protocol.getSwidgeStatus(`1:${DUMMY_PENDING_TX_HASH}`)
 
       expect(status).toEqual({
         status: 'pending',
-        transactions: [{ hash: '0xpending', chain: 1, type: 'source' }]
+        transactions: [{ hash: DUMMY_PENDING_TX_HASH, chain: 1, type: 'source' }]
       })
     })
   })
@@ -484,7 +563,7 @@ describe('SymbiosisProtocol', () => {
     test('should successfully return supported tokens', async () => {
       const tokens = await protocol.getSupportedTokens()
 
-      expect(tokens).toHaveLength(TOKENS.length)
+      expect(tokens).toHaveLength(DUMMY_TOKENS.length)
       expect(tokens.find(t => t.symbol === 'USDT' && t.chain === 1)).toEqual({
         token: USDT_ETH,
         chain: 1,
@@ -501,11 +580,11 @@ describe('SymbiosisProtocol', () => {
       expect(tokens).toEqual([
         { token: 'TON', chain: 85918, symbol: 'TON', decimals: 9, address: undefined, name: 'Toncoin' },
         {
-          token: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs',
+          token: TON_USDT_ADDRESS,
           chain: 85918,
           symbol: 'USDT',
           decimals: 6,
-          address: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs',
+          address: TON_USDT_ADDRESS,
           name: 'USDt'
         }
       ])
@@ -514,8 +593,10 @@ describe('SymbiosisProtocol', () => {
     test('should prefer the toChain filter for route-scoped discovery', async () => {
       const tokens = await protocol.getSupportedTokens({ fromChain: 'Ethereum', toChain: 42161 })
 
-      expect(tokens.map(t => t.token).sort()).toEqual([USDC_ARB, USDT_ARB].sort())
-      expect(tokens.every(t => t.chain === 42161)).toBe(true)
+      expect(tokens).toEqual([
+        { token: USDC_ARB, chain: 42161, symbol: 'USDC', decimals: 6, address: USDC_ARB, name: 'USDC' },
+        { token: USDT_ARB, chain: 42161, symbol: 'USDT', decimals: 6, address: USDT_ARB, name: 'Tether USD' }
+      ])
     })
   })
 

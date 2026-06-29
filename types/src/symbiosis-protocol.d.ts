@@ -34,35 +34,26 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      * Cache for chain and token discovery responses.
      *
      * @protected
-     * @type {Object<string, { timestamp: number, promise: Promise<any> }>}
+     * @type {Record<string, DiscoveryCacheEntry>}
      */
-    protected _discoveryCache: {
-        [x: string]: {
-            timestamp: number;
-            promise: Promise<any>;
-        };
-    };
+    protected _discoveryCache: Record<string, DiscoveryCacheEntry>;
     /**
      * Builds a Symbiosis `/v2/quote` and `/v2/swap` request payload from swidge options.
      *
      * @protected
      * @param {SwidgeOptions} options - The swidge options.
-     * @returns {Promise<{ body: Object, tokenIn: Object, tokenOut: Object }>} The request payload and the resolved tokens.
+     * @returns {Promise<SwapRequestBuildResult>} The request payload and the resolved tokens.
      * @throws {Error} If the options are invalid or the route cannot be resolved.
      */
-    protected _buildSwapRequest(options: SwidgeOptions): Promise<{
-        body: any;
-        tokenIn: any;
-        tokenOut: any;
-    }>;
+    protected _buildSwapRequest(options: SwidgeOptions): Promise<SwapRequestBuildResult>;
     /**
      * Maps Symbiosis fee entries to the shared swidge fee shape.
      *
      * @protected
-     * @param {Array<Object>} fees - The Symbiosis fee entries.
+     * @param {SymbiosisFeeEntry[]} fees - The Symbiosis fee entries.
      * @returns {SwidgeFee[]} The mapped fees.
      */
-    protected _mapFees(fees: Array<any>): SwidgeFee[];
+    protected _mapFees(fees: SymbiosisFeeEntry[]): SwidgeFee[];
     /**
      * Verifies the quoted fees against the configured fee caps.
      *
@@ -72,13 +63,13 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      * differs from the input token.
      *
      * @protected
-     * @param {Object} response - The Symbiosis swap response.
-     * @param {Object} body - The request payload.
-     * @param {Object} tokenIn - The resolved input token.
+     * @param {SymbiosisSwapResponse} response - The Symbiosis swap response.
+     * @param {SymbiosisSwapRequest} body - The request payload.
+     * @param {SymbiosisToken} tokenIn - The resolved input token.
      * @param {SwidgeProtocolConfig} [config] - Optional execution configuration overriding the instance fee caps.
      * @throws {Error} If a configured fee cap is exceeded.
      */
-    protected _checkFeeLimits(response: any, body: any, tokenIn: any, config?: SwidgeProtocolConfig): void;
+    protected _checkFeeLimits(response: SymbiosisSwapResponse, body: SymbiosisSwapRequest, tokenIn: SymbiosisToken, config?: SwidgeProtocolConfig): void;
     /**
      * Determines whether an ERC-20 approval transaction is required before executing an EVM route.
      *
@@ -88,39 +79,37 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      * for which the concept does not apply) always approve, preserving the previous behavior.
      *
      * @protected
-     * @param {Object} account - The bound wallet account.
+     * @param {IWalletAccount} account - The bound wallet account.
      * @param {string} token - The input token address.
      * @param {string} spender - The address that will spend the token (the route's `approveTo`).
      * @param {bigint} amount - The input amount in base units.
      * @returns {Promise<boolean>} Whether an approval transaction is required.
      */
-    protected _needsApproval(account: any, token: string, spender: string, amount: bigint): Promise<boolean>;
+    protected _needsApproval(account: IWalletAccount, token: string, spender: string, amount: bigint): Promise<boolean>;
     /**
      * Waits for a transaction to be mined by polling the wallet account for its receipt.
      *
      * @protected
-     * @param {Object} account - The bound wallet account.
+     * @param {IWalletAccount} account - The bound wallet account.
      * @param {string} hash - The transaction hash to wait for.
-     * @param {{ intervalMs?: number, timeoutMs?: number }} [options] - Polling options.
-     * @returns {Promise<Object | undefined>} The transaction receipt, if available.
+     * @param {{ intervalMs?: number, timeoutMs?: number }} [options] - Polling options: the poll
+     *   interval (default: 2,000 ms) and the overall timeout (default: 180,000 ms).
+     * @returns {Promise<TransactionReceipt | undefined>} The transaction receipt, if available.
      * @throws {Error} If the transaction reverts, or the receipt does not appear before the timeout.
      */
-    protected _waitForReceipt(account: any, hash: string, { intervalMs, timeoutMs }?: {
+    protected _waitForReceipt(account: IWalletAccount, hash: string, { intervalMs, timeoutMs }?: {
         intervalMs?: number;
         timeoutMs?: number;
-    }): Promise<any | undefined>;
+    }): Promise<TransactionReceipt | undefined>;
     /**
      * Resolves a chain identifier (Symbiosis chain id or chain name) to a Symbiosis chain.
      *
      * @protected
      * @param {string | number} identifier - The chain identifier.
-     * @returns {Promise<{ id: number, name: string }>} The resolved chain.
+     * @returns {Promise<SymbiosisChain>} The resolved chain.
      * @throws {Error} If the chain is not supported by Symbiosis.
      */
-    protected _resolveChain(identifier: string | number): Promise<{
-        id: number;
-        name: string;
-    }>;
+    protected _resolveChain(identifier: string | number): Promise<SymbiosisChain>;
     /**
      * Resolves a token identifier to a Symbiosis token on the given chain.
      *
@@ -128,29 +117,26 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      * or a native-token alias (`''`, `'native'`, or the zero address).
      *
      * @protected
-     * @param {{ id: number, name: string }} chain - The chain to resolve the token on.
+     * @param {SymbiosisChain} chain - The chain to resolve the token on.
      * @param {string} identifier - The token identifier.
-     * @returns {Promise<Object>} The resolved Symbiosis token.
+     * @returns {Promise<SymbiosisToken>} The resolved Symbiosis token.
      * @throws {Error} If the token is not in the Symbiosis token list.
      */
-    protected _resolveToken(chain: {
-        id: number;
-        name: string;
-    }, identifier: string): Promise<any>;
+    protected _resolveToken(chain: SymbiosisChain, identifier: string): Promise<SymbiosisToken>;
     /**
      * Fetches the supported chains, caching the response.
      *
      * @protected
-     * @returns {Promise<Array<Object>>} The supported chains.
+     * @returns {Promise<SymbiosisChain[]>} The supported chains.
      */
-    protected _getChains(): Promise<Array<any>>;
+    protected _getChains(): Promise<SymbiosisChain[]>;
     /**
      * Fetches the supported tokens, caching the response.
      *
      * @protected
-     * @returns {Promise<Array<Object>>} The supported tokens.
+     * @returns {Promise<SymbiosisToken[]>} The supported tokens.
      */
-    protected _getTokens(): Promise<Array<any>>;
+    protected _getTokens(): Promise<SymbiosisToken[]>;
     /**
      * Returns a cached discovery response, refreshing it when stale.
      *
@@ -175,6 +161,41 @@ export type SwidgeStatusResult = import("@tetherto/wdk-wallet/protocols").Swidge
 export type SwidgeSupportedChain = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedChain;
 export type SwidgeSupportedToken = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedToken;
 export type SwidgeSupportedTokensOptions = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedTokensOptions;
+export type SymbiosisChain = import("./api-client.js").SymbiosisChain;
+export type SymbiosisToken = import("./api-client.js").SymbiosisToken;
+export type SymbiosisFeeEntry = import("./api-client.js").SymbiosisFeeEntry;
+export type SymbiosisSwapRequest = import("./api-client.js").SymbiosisSwapRequest;
+export type SymbiosisSwapResponse = import("./api-client.js").SymbiosisSwapResponse;
+export type DiscoveryCacheEntry = {
+    /**
+     * - The epoch milliseconds at which the response was cached.
+     */
+    timestamp: number;
+    /**
+     * - The in-flight or settled discovery response.
+     */
+    promise: Promise<any>;
+};
+export type SwapRequestBuildResult = {
+    /**
+     * - The request payload for `/v2/quote` and `/v2/swap`.
+     */
+    body: SymbiosisSwapRequest;
+    /**
+     * - The resolved input token.
+     */
+    tokenIn: SymbiosisToken;
+    /**
+     * - The resolved output token.
+     */
+    tokenOut: SymbiosisToken;
+};
+export type TransactionReceipt = {
+    /**
+     * - The transaction status; a zero/false value indicates a reverted transaction.
+     */
+    status?: number | bigint | boolean;
+};
 export type SymbiosisProtocolConfig = {
     /**
      * - The Symbiosis chain of the bound wallet account: either the numeric
