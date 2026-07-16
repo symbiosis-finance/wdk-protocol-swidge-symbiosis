@@ -20,7 +20,7 @@ Instead, use either of the following private channels:
 - **GitHub private advisory** (preferred): open a report via the repository's
   [**Security → Report a vulnerability**](https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/security/advisories/new)
   page. This keeps the report private until a fix is published.
-- **Email**: [security@symbiosis.finance](mailto:security@symbiosis.finance).
+- **Email**: [legal@symbiosis.finance](mailto:legal@symbiosis.finance).
 
 Please include as much of the following as you can, to help us triage quickly:
 
