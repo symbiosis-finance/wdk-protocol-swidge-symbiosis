@@ -679,7 +679,7 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
       })
     })
 
-    test('should map the stuck status code to action-required', async () => {
+    test('should map the stuck status code to pending (non-terminal, self-resolving)', async () => {
       global.fetch = mockFetch({
         '/v1/chains': DUMMY_CHAINS,
         '/v2/tokens': DUMMY_TOKENS,
@@ -692,7 +692,7 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
       const status = await protocol.getSwidgeStatus(`1:${DUMMY_SOURCE_TX_HASH}`)
 
       expect(status).toEqual({
-        status: 'action-required',
+        status: 'pending',
         transactions: [{ hash: DUMMY_SOURCE_TX_HASH, chain: 1, type: 'source' }]
       })
     })

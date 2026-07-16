@@ -138,7 +138,7 @@ Any chain can be used as the **destination** regardless of this table.
 |---|---|
 | `1` (Pending) | `pending` |
 | `0` (Success) | `completed` |
-| `2` (Stuck) | `action-required` |
+| `2` (Stuck) | `pending` (non-terminal — Symbiosis resolves it automatically, no manual action needed) |
 | `3` (Reverted) | `refunded` |
 | `-1` (Not found) | `pending` (the source transaction may not be indexed yet) |
 
