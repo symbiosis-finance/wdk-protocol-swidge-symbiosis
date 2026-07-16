@@ -1,6 +1,20 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals'
 
-import SymbiosisProtocol from '../index.js'
+import SymbiosisProtocol, {
+  SymbiosisProtocol as NamedSymbiosisProtocol,
+  ISwidgeProtocol,
+  SymbiosisError,
+  ConfigurationError,
+  ValidationError,
+  ExactOutNotSupportedError,
+  UnsupportedChainError,
+  UnsupportedTokenError,
+  ReadOnlyAccountError,
+  UnsupportedRouteError,
+  FeeLimitExceededError,
+  TransactionError,
+  ApiError
+} from '../index.js'
 
 const API_URL = 'https://api.symbiosis.finance/crosschain'
 
@@ -89,12 +103,12 @@ function mockFetch (routes) {
     for (const [match, handler] of Object.entries(routes)) {
       if (path.startsWith(match)) {
         const result = typeof handler === 'function' ? handler(init) : handler
-        const { status = 200, body = result } = result?.__http ? result : {}
+        const { status = 200, body = result, text } = result?.__http ? result : {}
         return {
           ok: status >= 200 && status < 300,
           status,
           statusText: String(status),
-          text: async () => JSON.stringify(body)
+          text: async () => text !== undefined ? text : JSON.stringify(body)
         }
       }
     }
@@ -173,7 +187,7 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
         toToken: USDC_ARB,
         toChain: 42161,
         toTokenAmount: 100000000n
-      })).rejects.toThrow('exact-out')
+      })).rejects.toThrow(ExactOutNotSupportedError)
     })
 
     test('should throw if the source chain is not configured', async () => {
@@ -183,7 +197,7 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
         fromToken: USDT_ETH,
         toToken: USDC_ARB,
         fromTokenAmount: 1n
-      })).rejects.toThrow("missing the 'chain' option")
+      })).rejects.toThrow(ConfigurationError)
     })
 
     test('should throw if the token is unknown', async () => {
@@ -192,7 +206,53 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
         toToken: USDC_ARB,
         toChain: 42161,
         fromTokenAmount: 1n
-      })).rejects.toThrow('not in the Symbiosis token list')
+      })).rejects.toThrow(UnsupportedTokenError)
+    })
+
+    test('should throw if the fromTokenAmount option is missing', async () => {
+      await expect(protocol.quoteSwidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161
+      })).rejects.toThrow(ValidationError)
+    })
+
+    test('should throw if a token identifier is not a string', async () => {
+      await expect(protocol.quoteSwidge({
+        fromToken: 42,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 1n
+      })).rejects.toThrow(ValidationError)
+    })
+
+    test('should throw UnsupportedChainError for an unknown destination chain', async () => {
+      await expect(protocol.quoteSwidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 'Nonexistent Chain',
+        fromTokenAmount: 1n
+      })).rejects.toThrow(UnsupportedChainError)
+    })
+
+    test('should rethrow when the destination token is unknown and no legacy fallback applies', async () => {
+      await expect(protocol.quoteSwidge({
+        fromToken: USDT_ETH,
+        toToken: '0x0000000000000000000000000000000000000bad',
+        toChain: 42161,
+        fromTokenAmount: 1n
+      })).rejects.toThrow(UnsupportedTokenError)
+    })
+
+    test('should throw if the sender cannot be resolved in quote-only mode', async () => {
+      const quoteOnly = new SymbiosisProtocol(undefined, { chain: 'Ethereum' })
+
+      await expect(quoteOnly.quoteSwidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 1n
+      })).rejects.toThrow(ValidationError)
     })
   })
 
@@ -411,7 +471,47 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
         toToken: USDC_ARB,
         toChain: 42161,
         fromTokenAmount: 100000000n
-      })).rejects.toThrow("'tron' transaction")
+      })).rejects.toThrow(UnsupportedRouteError)
+    })
+
+    test('should throw ReadOnlyAccountError when the account cannot approve an EVM route', async () => {
+      const noApprove = new SymbiosisProtocol({
+        getAddress: jest.fn(async () => SENDER),
+        sendTransaction: jest.fn(async () => ({ hash: DUMMY_SOURCE_TX_HASH }))
+      }, { chain: 'Ethereum' })
+
+      await expect(noApprove.swidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 100000000n
+      })).rejects.toThrow(ReadOnlyAccountError)
+    })
+
+    test('should evaluate maxNetworkFeeBps in isolation without flagging protocol fees', async () => {
+      // The Symbiosis fees map to the 'protocol'/'affiliate' categories, never 'network',
+      // so a maxNetworkFeeBps cap alone must never be tripped by a (large) protocol fee.
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        '/v2/swap': {
+          ...DUMMY_EVM_SWAP_RESPONSE,
+          fees: [{
+            provider: 'symbiosis',
+            description: 'Cross-chain fee',
+            value: { symbol: 'USDT', address: USDT_ETH, chainId: 1, decimals: 6, amount: '5000000', priceUsd: 1 }
+          }]
+        }
+      })
+
+      const result = await protocol.swidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 100000000n
+      }, { maxNetworkFeeBps: 1 })
+
+      expect(result.id).toBe(`1:${DUMMY_SOURCE_TX_HASH}`)
     })
 
     test('should throw on a Solana source route not executable through WDK accounts', async () => {
@@ -426,7 +526,7 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
         toToken: USDC_ARB,
         toChain: 42161,
         fromTokenAmount: 100000000n
-      })).rejects.toThrow("'solana' transaction")
+      })).rejects.toThrow(UnsupportedRouteError)
     })
 
     test('should throw if the swidge fees exceed the max protocol fee configuration', async () => {
@@ -435,7 +535,7 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
         toToken: USDC_ARB,
         toChain: 42161,
         fromTokenAmount: 100000000n
-      }, { maxProtocolFeeBps: 10 })).rejects.toThrow('exceeds the configured maximum of 10 bps')
+      }, { maxProtocolFeeBps: 10 })).rejects.toThrow(FeeLimitExceededError)
     })
 
     test('should pass when the swidge fees are below the fee caps', async () => {
@@ -460,6 +560,33 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
       })
     })
 
+    test('should compare fees by normalized amount when USD prices are unavailable', async () => {
+      // No priceUsd on the fee or the input token: the cap check falls back to
+      // comparing decimal-normalized amounts directly.
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': [
+          { symbol: 'USDT', name: 'Tether USD', address: USDT_ETH, chainId: 1, decimals: 6 },
+          { symbol: 'USDC', name: 'USDC', address: USDC_ARB, chainId: 42161, decimals: 6 }
+        ],
+        '/v2/swap': {
+          ...DUMMY_EVM_SWAP_RESPONSE,
+          fees: [{
+            provider: 'symbiosis',
+            description: 'Cross-chain fee',
+            value: { symbol: 'USDC', address: USDC_ARB, chainId: 42161, decimals: 6, amount: '250000' }
+          }]
+        }
+      })
+
+      await expect(protocol.swidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 100000000n
+      }, { maxProtocolFeeBps: 10 })).rejects.toThrow(FeeLimitExceededError)
+    })
+
     test('should throw if the account is read-only', async () => {
       const readOnly = new SymbiosisProtocol({ getAddress: async () => SENDER }, { chain: 1 })
 
@@ -468,7 +595,15 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
         toToken: USDC_ARB,
         toChain: 42161,
         fromTokenAmount: 1n
-      })).rejects.toThrow('read-only')
+      })).rejects.toThrow(ReadOnlyAccountError)
+    })
+
+    test('should throw a TransactionError when the receipt does not appear before the timeout', async () => {
+      account.getTransactionReceipt = jest.fn(async () => null)
+
+      await expect(
+        protocol._waitForReceipt(account, DUMMY_APPROVE_TX_HASH, { intervalMs: 1, timeoutMs: 5 })
+      ).rejects.toThrow(TransactionError)
     })
   })
 
@@ -543,6 +678,103 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
         transactions: [{ hash: DUMMY_PENDING_TX_HASH, chain: 1, type: 'source' }]
       })
     })
+
+    test('should map the stuck status code to action-required', async () => {
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        [`/v2/tx/1/${DUMMY_SOURCE_TX_HASH}`]: {
+          status: { code: 2, text: 'Stuck' },
+          txIn: { hash: DUMMY_SOURCE_TX_HASH, chainId: 1 }
+        }
+      })
+
+      const status = await protocol.getSwidgeStatus(`1:${DUMMY_SOURCE_TX_HASH}`)
+
+      expect(status).toEqual({
+        status: 'action-required',
+        transactions: [{ hash: DUMMY_SOURCE_TX_HASH, chain: 1, type: 'source' }]
+      })
+    })
+
+    test('should default to pending for an unknown status code', async () => {
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        [`/v2/tx/1/${DUMMY_SOURCE_TX_HASH}`]: { status: { code: 99 } }
+      })
+
+      const status = await protocol.getSwidgeStatus(`1:${DUMMY_SOURCE_TX_HASH}`)
+
+      expect(status).toEqual({ status: 'pending', transactions: [] })
+    })
+
+    test('should throw a ValidationError for a malformed (empty) swidge id', async () => {
+      await expect(protocol.getSwidgeStatus('')).rejects.toThrow(ValidationError)
+    })
+
+    test('should throw a ValidationError for a non-string swidge id', async () => {
+      await expect(protocol.getSwidgeStatus(null)).rejects.toThrow(ValidationError)
+    })
+
+    test('should throw a ValidationError when the source chain of a bare hash cannot be resolved', async () => {
+      const unconfigured = new SymbiosisProtocol(account)
+
+      await expect(unconfigured.getSwidgeStatus(DUMMY_SOURCE_TX_HASH)).rejects.toThrow(ValidationError)
+    })
+
+    test('should rethrow a non-404 API error as an ApiError', async () => {
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        [`/v2/tx/1/${DUMMY_SOURCE_TX_HASH}`]: { __http: true, status: 500, body: { message: 'boom' } }
+      })
+
+      await expect(protocol.getSwidgeStatus(`1:${DUMMY_SOURCE_TX_HASH}`)).rejects.toThrow(ApiError)
+    })
+
+    test('should build the ApiError message from an errors array', async () => {
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        [`/v2/tx/1/${DUMMY_SOURCE_TX_HASH}`]: {
+          __http: true,
+          status: 400,
+          body: { errors: [{ message: 'bad hash' }, 'also bad'] }
+        }
+      })
+
+      await expect(protocol.getSwidgeStatus(`1:${DUMMY_SOURCE_TX_HASH}`))
+        .rejects.toThrow('bad hash; also bad')
+    })
+
+    test('should fall back to the response text when the error body is not JSON', async () => {
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        [`/v2/tx/1/${DUMMY_SOURCE_TX_HASH}`]: { __http: true, status: 502, text: 'Bad Gateway' }
+      })
+
+      await expect(protocol.getSwidgeStatus(`1:${DUMMY_SOURCE_TX_HASH}`))
+        .rejects.toThrow('Bad Gateway')
+    })
+  })
+
+  describe('discovery caching', () => {
+    test('should not cache a failed discovery response and surface it as an ApiError', async () => {
+      let calls = 0
+      global.fetch = mockFetch({
+        '/v2/tokens': () => {
+          calls++
+          return { __http: true, status: 503, body: { message: 'unavailable' } }
+        }
+      })
+
+      await expect(protocol.getSupportedTokens()).rejects.toThrow(ApiError)
+      // The rejected discovery must not be cached: a second call retries the fetch.
+      await expect(protocol.getSupportedTokens()).rejects.toThrow(ApiError)
+      expect(calls).toBe(2)
+    })
   })
 
   describe('getSupportedChains', () => {
@@ -601,6 +833,54 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
   })
 
   describe('legacy interfaces (derived from swidge)', () => {
+    test('swap should delegate to swidge and aggregate all fees into the legacy fee', async () => {
+      const result = await protocol.swap({
+        tokenIn: USDT_ETH,
+        tokenOut: 'ETH',
+        to: SENDER,
+        tokenInAmount: 100000000n
+      })
+
+      expect(result).toEqual({
+        hash: `1:${DUMMY_SOURCE_TX_HASH}`,
+        fee: 250000n,
+        tokenInAmount: 100000000n,
+        tokenOutAmount: 99263949n
+      })
+    })
+
+    test('quoteSwap should delegate to quoteSwidge and aggregate all fees', async () => {
+      const quote = await protocol.quoteSwap({
+        tokenIn: USDT_ETH,
+        tokenOut: 'ETH',
+        to: SENDER,
+        tokenInAmount: 100000000n
+      })
+
+      expect(quote).toEqual({
+        fee: 250000n,
+        tokenInAmount: 100000000n,
+        tokenOutAmount: 99263949n
+      })
+    })
+
+    test('bridge should delegate to swidge, resolving the destination token by symbol', async () => {
+      const result = await protocol.bridge({
+        targetChain: 42161,
+        token: USDT_ETH,
+        amount: 100000000n,
+        recipient: SENDER
+      })
+
+      // No network-type fees are emitted, so the legacy fee is 0n and the
+      // Symbiosis protocol fee surfaces as bridgeFee.
+      expect(result).toEqual({
+        hash: `1:${DUMMY_SOURCE_TX_HASH}`,
+        fee: 0n,
+        bridgeFee: 250000n
+      })
+    })
+
     test('quoteBridge should delegate to quoteSwidge', async () => {
       const quote = await protocol.quoteBridge({
         targetChain: 42161,
@@ -610,6 +890,76 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
       })
 
       expect(quote).toEqual({ fee: 0n, bridgeFee: 250000n })
+    })
+  })
+
+  describe('module exports (index.js)', () => {
+    test('should expose the default and named SymbiosisProtocol export as the same class', () => {
+      expect(NamedSymbiosisProtocol).toBe(SymbiosisProtocol)
+      expect(protocol).toBeInstanceOf(SymbiosisProtocol)
+    })
+
+    test('should re-export the ISwidgeProtocol interface from wdk-wallet', () => {
+      expect(typeof ISwidgeProtocol).toBe('function')
+    })
+
+    test('should export every typed error class', () => {
+      for (const ErrorClass of [
+        SymbiosisError, ConfigurationError, ValidationError, ExactOutNotSupportedError,
+        UnsupportedChainError, UnsupportedTokenError, ReadOnlyAccountError,
+        UnsupportedRouteError, FeeLimitExceededError, TransactionError, ApiError
+      ]) {
+        expect(typeof ErrorClass).toBe('function')
+        expect(ErrorClass.prototype).toBeInstanceOf(Error)
+      }
+    })
+  })
+
+  describe('typed errors', () => {
+    test('every typed error extends SymbiosisError and carries its own name', () => {
+      const cases = [
+        [new SymbiosisError('x'), 'SymbiosisError'],
+        [new ConfigurationError('x'), 'ConfigurationError'],
+        [new ValidationError('x'), 'ValidationError'],
+        [new ExactOutNotSupportedError(), 'ExactOutNotSupportedError'],
+        [new UnsupportedChainError('Foo'), 'UnsupportedChainError'],
+        [new UnsupportedTokenError('BAR', 'Foo'), 'UnsupportedTokenError'],
+        [new ReadOnlyAccountError('x'), 'ReadOnlyAccountError'],
+        [new UnsupportedRouteError('tron'), 'UnsupportedRouteError'],
+        [new FeeLimitExceededError('protocol', 12.34, 10), 'FeeLimitExceededError'],
+        [new TransactionError('x', '0xabc'), 'TransactionError'],
+        [new ApiError('x', 500, { message: 'x' }), 'ApiError']
+      ]
+
+      for (const [err, name] of cases) {
+        expect(err).toBeInstanceOf(SymbiosisError)
+        expect(err).toBeInstanceOf(Error)
+        expect(err.name).toBe(name)
+      }
+    })
+
+    test('should preserve typed-error metadata', () => {
+      expect(new UnsupportedChainError('Foo').identifier).toBe('Foo')
+      expect(new UnsupportedTokenError('BAR').identifier).toBe('BAR')
+      expect(new UnsupportedRouteError('solana').type).toBe('solana')
+
+      const feeErr = new FeeLimitExceededError('protocol', 12.34, 10)
+      expect(feeErr.feeType).toBe('protocol')
+      expect(feeErr.cap).toBe(10)
+
+      expect(new TransactionError('reverted', '0xabc').hash).toBe('0xabc')
+
+      const apiErr = new ApiError('failed', 404, { message: 'not found' })
+      expect(apiErr.status).toBe(404)
+      expect(apiErr.response).toEqual({ message: 'not found' })
+
+      const cause = new Error('root')
+      expect(new SymbiosisError('wrapped', { cause }).cause).toBe(cause)
+    })
+
+    test('UnsupportedTokenError should omit the chain when none is given', () => {
+      expect(new UnsupportedTokenError('BAR').message).not.toContain('on chain')
+      expect(new UnsupportedTokenError('BAR', 'Ethereum').message).toContain("on chain 'Ethereum'")
     })
   })
 })

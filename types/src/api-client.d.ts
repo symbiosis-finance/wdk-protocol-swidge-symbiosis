@@ -170,7 +170,7 @@ export default class SymbiosisApiClient {
      * @param {string} path - The API path.
      * @param {Record<string, unknown>} [body] - The optional JSON request body.
      * @returns {Promise<any>} The parsed JSON response.
-     * @throws {Error} If the request fails or the API returns a non-2xx status.
+     * @throws {ApiError} If the request fails or the API returns a non-2xx status.
      */
     protected _request(method: string, path: string, body?: Record<string, unknown>): Promise<any>;
 }

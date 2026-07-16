@@ -1,4 +1,4 @@
-export { default } from "./src/symbiosis-protocol.js";
+export { ISwidgeProtocol } from "@tetherto/wdk-wallet/protocols";
 export type SwapOptions = import("@tetherto/wdk-wallet/protocols").SwapOptions;
 export type SwapResult = import("@tetherto/wdk-wallet/protocols").SwapResult;
 export type BridgeOptions = import("@tetherto/wdk-wallet/protocols").BridgeOptions;
@@ -20,3 +20,5 @@ export type SwidgeSupportedChain = import("@tetherto/wdk-wallet/protocols").Swid
 export type SwidgeSupportedToken = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedToken;
 export type SwidgeSupportedTokensOptions = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedTokensOptions;
 export type SymbiosisProtocolConfig = import("./src/symbiosis-protocol.js").SymbiosisProtocolConfig;
+export { default, default as SymbiosisProtocol } from "./src/symbiosis-protocol.js";
+export { SymbiosisError, ConfigurationError, ValidationError, ExactOutNotSupportedError, UnsupportedChainError, UnsupportedTokenError, ReadOnlyAccountError, UnsupportedRouteError, FeeLimitExceededError, TransactionError, ApiError } from "./src/errors.js";

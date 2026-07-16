@@ -6,6 +6,12 @@ WDK swidge protocol module for [Symbiosis](https://symbiosis.finance) — any-to
 
 The module implements the [WDK swidge protocol interface](https://docs.wdk.tether.io/sdk/swidge-modules) (`SwidgeProtocol` from `@tetherto/wdk-wallet/protocols`) on top of the public [Symbiosis REST API](https://api.symbiosis.finance/crosschain/docs/) (`/v2/quote`, `/v2/swap`, `/v2/tx`). No heavyweight chain SDK dependencies: quoting and routing happen server-side, transactions are signed and broadcast by your WDK wallet account.
 
+## Compatibility
+
+- **WDK interface implemented**: `SwidgeProtocol` (`ISwidgeProtocol`) from `@tetherto/wdk-wallet/protocols`. The legacy `ISwapProtocol` / `IBridgeProtocol` methods (`swap`, `quoteSwap`, `bridge`, `quoteBridge`) are derived from the swidge implementation by the WDK base class.
+- **Tested against**: `@tetherto/wdk-wallet` `^1.0.0-beta.11` (peer/runtime dependency) and `@tetherto/wdk-wallet-evm` `^1.0.0-beta.14`.
+- **Runtimes**: Node.js, React Native and Bare (no native chain SDK dependencies).
+
 ## Features
 
 - **Any-to-any routes**: swap-only, bridge-only and combined swap + bridge routes in a single interface
@@ -140,6 +146,63 @@ The `id` returned by `swidge()` has the form `'<sourceChainId>:<sourceTxHash>'` 
 
 A just-submitted source transaction is not indexed by the API for a while (~30s), during which the status endpoint returns HTTP 404. `getSwidgeStatus()` reports this as `pending` (returning the known source transaction) rather than throwing, so a polling consumer can keep tracking right after `swidge()`. As a consequence, a genuinely unknown id is also reported as `pending` rather than raising an error.
 
+## Fees
+
+Symbiosis returns an itemised fee breakdown on every quote and swap. Each entry is mapped to a WDK `SwidgeFee` by its `provider` field:
+
+| Symbiosis `fees[].provider` | `SwidgeFee.type` | Notes |
+|---|---|---|
+| `symbiosis` | `protocol` | The Symbiosis cross-chain / protocol fee. |
+| `partner` | `affiliate` | The partner (affiliate) share, when a `partnerAddress` is configured. |
+| any other value | `protocol` | Fallback for unrecognised providers. |
+
+The mapped `SwidgeFee` carries `amount` (base units), `token`, `chain`, `description`, and `included: true` — Symbiosis quotes are net of fees, so they are always already reflected in `toTokenAmount`.
+
+When you call the derived legacy interfaces, the WDK base class aggregates these `SwidgeFee` entries into the legacy scalar fee fields:
+
+| Legacy method | Legacy `fee` | Legacy `bridgeFee` |
+|---|---|---|
+| `swap()` / `quoteSwap()` | sum of **all** `SwidgeFee.amount` | — |
+| `bridge()` / `quoteBridge()` | sum of `network`-type fees | sum of `protocol`-type fees |
+
+This module does not emit `network`-type fees, so the legacy `bridge()` `fee` is `0n` and the Symbiosis protocol fee is reported as `bridgeFee`. Prefer `quoteSwidge()` / `swidge()` and read the full `fees` array for a complete, typed breakdown.
+
+## Error handling
+
+Every error thrown by the module is an instance of `SymbiosisError`, so you can catch the whole family with a single check and still narrow to a specific subclass. All classes are exported from the package entry point:
+
+```javascript
+import {
+  SymbiosisError, ConfigurationError, ValidationError, ExactOutNotSupportedError,
+  UnsupportedChainError, UnsupportedTokenError, ReadOnlyAccountError,
+  UnsupportedRouteError, FeeLimitExceededError, TransactionError, ApiError
+} from '@symbiosis-finance/wdk-protocol-swidge-symbiosis'
+
+try {
+  await symbiosis.swidge(options, { maxProtocolFeeBps: 100 })
+} catch (err) {
+  if (err instanceof FeeLimitExceededError) {
+    console.warn(`${err.feeType} fee ${err.bps} bps exceeds cap ${err.cap} bps`)
+  } else if (err instanceof SymbiosisError) {
+    console.error(err.name, err.message)
+  }
+}
+```
+
+| Error | Extends | Thrown when |
+|---|---|---|
+| `SymbiosisError` | `Error` | Base class for all errors below — use for a catch-all `instanceof` check. |
+| `ConfigurationError` | `SymbiosisError` | The required source `chain` option is missing from the protocol configuration. |
+| `ValidationError` | `SymbiosisError` | Invalid arguments: missing `fromTokenAmount`, a non-string token identifier, an empty/malformed swidge id, an unresolvable source chain from a bare id, or an unresolvable sender address. |
+| `ExactOutNotSupportedError` | `SymbiosisError` | An exact-out operation is requested (`toTokenAmount` is set); Symbiosis is exact-in only. |
+| `UnsupportedChainError` | `SymbiosisError` | A chain identifier cannot be resolved to a Symbiosis-supported chain. Carries `.identifier`. |
+| `UnsupportedTokenError` | `SymbiosisError` | A token identifier is not in the Symbiosis token list for the chain. Carries `.identifier`. |
+| `ReadOnlyAccountError` | `SymbiosisError` | Execution is attempted without a signing account, with a read-only account, or with an account lacking a required capability (e.g. ERC-20 approvals). |
+| `UnsupportedRouteError` | `SymbiosisError` | The route type returned by Symbiosis (`tron`/`solana`) cannot be executed through the bound WDK account. Carries `.type`. |
+| `FeeLimitExceededError` | `SymbiosisError` | The quoted network/protocol fee exceeds the configured `maxNetworkFeeBps`/`maxProtocolFeeBps`. Carries `.feeType`, `.bps`, `.cap`. |
+| `TransactionError` | `SymbiosisError` | A transaction submitted during execution reverts, or its receipt does not appear before the timeout. Carries `.hash`. |
+| `ApiError` | `SymbiosisError` | The Symbiosis REST API returned a non-2xx response. Carries `.status` and the parsed `.response`. |
+
 ## Notes and limitations
 
 - **Exact-out is not supported**: pass `fromTokenAmount`; `toTokenAmount` throws.
@@ -156,6 +219,19 @@ npm test
 npm run lint
 npm run build:types
 ```
+
+See [CHANGELOG.md](CHANGELOG.md) for the release history.
+
+## Support
+
+- **Bugs and feature requests**: open an issue at [github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/issues](https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/issues).
+- **Symbiosis protocol / API questions**: see the [Symbiosis developer docs](https://docs.symbiosis.finance/developer-tools/symbiosis-api) and the [Symbiosis community channels](https://symbiosis.finance).
+- **WDK questions**: see the [WDK documentation](https://docs.wdk.tether.io).
+
+## Security
+
+Please report security vulnerabilities privately, following the process in
+[SECURITY.md](SECURITY.md) — **do not** open a public issue for security reports.
 
 ## License
 

@@ -43,7 +43,11 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      * @protected
      * @param {SwidgeOptions} options - The swidge options.
      * @returns {Promise<SwapRequestBuildResult>} The request payload and the resolved tokens.
-     * @throws {Error} If the options are invalid or the route cannot be resolved.
+     * @throws {ExactOutNotSupportedError} If an exact-out operation is requested.
+     * @throws {ValidationError} If the options are invalid.
+     * @throws {ConfigurationError} If the source `chain` is not configured.
+     * @throws {UnsupportedChainError} If a chain identifier cannot be resolved.
+     * @throws {UnsupportedTokenError} If a token identifier cannot be resolved.
      */
     protected _buildSwapRequest(options: SwidgeOptions): Promise<SwapRequestBuildResult>;
     /**
@@ -67,7 +71,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      * @param {SymbiosisSwapRequest} body - The request payload.
      * @param {SymbiosisToken} tokenIn - The resolved input token.
      * @param {SwidgeProtocolConfig} [config] - Optional execution configuration overriding the instance fee caps.
-     * @throws {Error} If a configured fee cap is exceeded.
+     * @throws {FeeLimitExceededError} If a configured fee cap is exceeded.
      */
     protected _checkFeeLimits(response: SymbiosisSwapResponse, body: SymbiosisSwapRequest, tokenIn: SymbiosisToken, config?: SwidgeProtocolConfig): void;
     /**
@@ -95,7 +99,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      * @param {{ intervalMs?: number, timeoutMs?: number }} [options] - Polling options: the poll
      *   interval (default: 2,000 ms) and the overall timeout (default: 180,000 ms).
      * @returns {Promise<TransactionReceipt | undefined>} The transaction receipt, if available.
-     * @throws {Error} If the transaction reverts, or the receipt does not appear before the timeout.
+     * @throws {TransactionError} If the transaction reverts, or the receipt does not appear before the timeout.
      */
     protected _waitForReceipt(account: IWalletAccount, hash: string, { intervalMs, timeoutMs }?: {
         intervalMs?: number;
@@ -107,7 +111,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      * @protected
      * @param {string | number} identifier - The chain identifier.
      * @returns {Promise<SymbiosisChain>} The resolved chain.
-     * @throws {Error} If the chain is not supported by Symbiosis.
+     * @throws {UnsupportedChainError} If the chain is not supported by Symbiosis.
      */
     protected _resolveChain(identifier: string | number): Promise<SymbiosisChain>;
     /**
@@ -120,7 +124,8 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      * @param {SymbiosisChain} chain - The chain to resolve the token on.
      * @param {string} identifier - The token identifier.
      * @returns {Promise<SymbiosisToken>} The resolved Symbiosis token.
-     * @throws {Error} If the token is not in the Symbiosis token list.
+     * @throws {ValidationError} If the token identifier is not a string.
+     * @throws {UnsupportedTokenError} If the token is not in the Symbiosis token list.
      */
     protected _resolveToken(chain: SymbiosisChain, identifier: string): Promise<SymbiosisToken>;
     /**
@@ -161,6 +166,7 @@ export type SwidgeStatusResult = import("@tetherto/wdk-wallet/protocols").Swidge
 export type SwidgeSupportedChain = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedChain;
 export type SwidgeSupportedToken = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedToken;
 export type SwidgeSupportedTokensOptions = import("@tetherto/wdk-wallet/protocols").SwidgeSupportedTokensOptions;
+export type ApiError = import("./errors.js").ApiError;
 export type SymbiosisChain = import("./api-client.js").SymbiosisChain;
 export type SymbiosisToken = import("./api-client.js").SymbiosisToken;
 export type SymbiosisFeeEntry = import("./api-client.js").SymbiosisFeeEntry;

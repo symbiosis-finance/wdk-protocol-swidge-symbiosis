@@ -17,6 +17,17 @@
 import { SwidgeProtocol } from '@tetherto/wdk-wallet/protocols'
 
 import SymbiosisApiClient from './api-client.js'
+import {
+  ConfigurationError,
+  ExactOutNotSupportedError,
+  FeeLimitExceededError,
+  ReadOnlyAccountError,
+  TransactionError,
+  UnsupportedChainError,
+  UnsupportedRouteError,
+  UnsupportedTokenError,
+  ValidationError
+} from './errors.js'
 
 /** @typedef {import('@tetherto/wdk-wallet').IWalletAccount} IWalletAccount */
 /** @typedef {import('@tetherto/wdk-wallet').IWalletAccountReadOnly} IWalletAccountReadOnly */
@@ -33,6 +44,8 @@ import SymbiosisApiClient from './api-client.js'
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeSupportedChain} SwidgeSupportedChain */
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeSupportedToken} SwidgeSupportedToken */
 /** @typedef {import('@tetherto/wdk-wallet/protocols').SwidgeSupportedTokensOptions} SwidgeSupportedTokensOptions */
+
+/** @typedef {import('./errors.js').ApiError} ApiError */
 
 /** @typedef {import('./api-client.js').SymbiosisChain} SymbiosisChain */
 /** @typedef {import('./api-client.js').SymbiosisToken} SymbiosisToken */
@@ -157,7 +170,12 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    *
    * @param {SwidgeOptions} options - The swidge options.
    * @returns {Promise<SwidgeQuote>} The quoted swidge details.
-   * @throws {Error} If the route is unsupported, or the protocol is misconfigured.
+   * @throws {ConfigurationError} If the protocol is missing the source `chain` configuration.
+   * @throws {ExactOutNotSupportedError} If an exact-out operation is requested.
+   * @throws {ValidationError} If the options are invalid.
+   * @throws {UnsupportedChainError} If a chain identifier is not supported by Symbiosis.
+   * @throws {UnsupportedTokenError} If a token identifier is not in the Symbiosis token list.
+   * @throws {ApiError} If the Symbiosis API rejects the quote request.
    */
   async quoteSwidge (options) {
     const { body } = await this._buildSwapRequest(options)
@@ -185,13 +203,16 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * @param {SwidgeOptions} options - The swidge options.
    * @param {SwidgeProtocolConfig} [config] - Optional execution configuration overriding the instance fee caps.
    * @returns {Promise<SwidgeResult>} The swidge execution result.
-   * @throws {Error} If no account or a read-only account was given at construction, if a fee cap is
-   *   exceeded, or if the route type cannot be executed by the bound wallet account.
+   * @throws {ReadOnlyAccountError} If no account, a read-only account, or an account lacking a required
+   *   capability was given at construction.
+   * @throws {FeeLimitExceededError} If a configured fee cap is exceeded.
+   * @throws {UnsupportedRouteError} If the route type cannot be executed by the bound wallet account.
+   * @throws {TransactionError} If a transaction submitted during execution reverts or times out.
    */
   async swidge (options, config) {
     const account = this._account
     if (!account || typeof account.sendTransaction !== 'function') {
-      throw new Error('Cannot execute a swidge operation: the protocol was created without an account or with a read-only account.')
+      throw new ReadOnlyAccountError('Cannot execute a swidge operation: the protocol was created without an account or with a read-only account.')
     }
 
     const { body, tokenIn } = await this._buildSwapRequest(options)
@@ -210,7 +231,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
         const isNative = body.tokenAmountIn.address === ''
         if (!isNative && !this._config.skipApproval && await this._needsApproval(account, body.tokenAmountIn.address, response.approveTo, amount)) {
           if (typeof account.approve !== 'function') {
-            throw new Error('Cannot approve the input token: the wallet account does not support ERC-20 approvals.')
+            throw new ReadOnlyAccountError('Cannot approve the input token: the wallet account does not support ERC-20 approvals.')
           }
           const approval = await account.approve({
             token: body.tokenAmountIn.address,
@@ -256,7 +277,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
       }
 
       default:
-        throw new Error(`Symbiosis returned a '${response.type}' transaction, which cannot be executed through the bound WDK wallet account yet. Use quoteSwidge() to retrieve the route and execute it externally.`)
+        throw new UnsupportedRouteError(response.type)
     }
 
     transactions.push({ hash, chain: srcChainId, type: 'source' })
@@ -282,11 +303,13 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * @returns {Promise<SwidgeStatusResult>} The current swidge status. A source transaction that
    *   the API has not indexed yet (HTTP 404, common for ~30s after submission) is reported as
    *   `pending` rather than throwing, so it cannot be distinguished from a genuinely unknown id.
-   * @throws {Error} If the id is invalid.
+   * @throws {ValidationError} If the id is invalid or the source chain cannot be resolved.
+   * @throws {UnsupportedChainError} If the resolved source chain is not supported by Symbiosis.
+   * @throws {ApiError} If the Symbiosis API rejects the status request (other than a 404).
    */
   async getSwidgeStatus (id, options) {
     if (typeof id !== 'string' || id.length === 0) {
-      throw new Error('Invalid swidge identifier.')
+      throw new ValidationError('Invalid swidge identifier.')
     }
 
     let chain, hash
@@ -299,7 +322,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
       hash = id
     }
     if (chain == null) {
-      throw new Error('Cannot resolve the source chain of the swidge: pass an id in the \'<chainId>:<hash>\' format, or provide the fromChain status option.')
+      throw new ValidationError('Cannot resolve the source chain of the swidge: pass an id in the \'<chainId>:<hash>\' format, or provide the fromChain status option.')
     }
 
     const { id: chainId } = await this._resolveChain(chain)
@@ -399,17 +422,21 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * @protected
    * @param {SwidgeOptions} options - The swidge options.
    * @returns {Promise<SwapRequestBuildResult>} The request payload and the resolved tokens.
-   * @throws {Error} If the options are invalid or the route cannot be resolved.
+   * @throws {ExactOutNotSupportedError} If an exact-out operation is requested.
+   * @throws {ValidationError} If the options are invalid.
+   * @throws {ConfigurationError} If the source `chain` is not configured.
+   * @throws {UnsupportedChainError} If a chain identifier cannot be resolved.
+   * @throws {UnsupportedTokenError} If a token identifier cannot be resolved.
    */
   async _buildSwapRequest (options) {
     if (options.toTokenAmount != null) {
-      throw new Error('Symbiosis does not support exact-out operations: pass fromTokenAmount instead of toTokenAmount.')
+      throw new ExactOutNotSupportedError()
     }
     if (options.fromTokenAmount == null) {
-      throw new Error('The fromTokenAmount option is required.')
+      throw new ValidationError('The fromTokenAmount option is required.')
     }
     if (this._config.chain == null) {
-      throw new Error('The symbiosis protocol configuration is missing the \'chain\' option identifying the source chain of the bound account.')
+      throw new ConfigurationError('The symbiosis protocol configuration is missing the \'chain\' option identifying the source chain of the bound account.')
     }
 
     const srcChain = await this._resolveChain(this._config.chain)
@@ -432,7 +459,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
 
     const from = this._account ? await this._account.getAddress() : options.recipient
     if (!from) {
-      throw new Error('Cannot resolve the sender address: bind a wallet account or pass the recipient option.')
+      throw new ValidationError('Cannot resolve the sender address: bind a wallet account or pass the recipient option.')
     }
     const to = options.recipient ?? from
 
@@ -498,7 +525,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * @param {SymbiosisSwapRequest} body - The request payload.
    * @param {SymbiosisToken} tokenIn - The resolved input token.
    * @param {SwidgeProtocolConfig} [config] - Optional execution configuration overriding the instance fee caps.
-   * @throws {Error} If a configured fee cap is exceeded.
+   * @throws {FeeLimitExceededError} If a configured fee cap is exceeded.
    */
   _checkFeeLimits (response, body, tokenIn, config) {
     const maxNetworkFeeBps = config?.maxNetworkFeeBps ?? this._config.maxNetworkFeeBps
@@ -523,7 +550,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
       if (cap == null) continue
       const bps = totals[type] * 10000
       if (bps > Number(cap)) {
-        throw new Error(`The quoted ${type} fee (${bps.toFixed(2)} bps) exceeds the configured maximum of ${cap} bps.`)
+        throw new FeeLimitExceededError(/** @type {'network' | 'protocol'} */ (type), bps, cap)
       }
     }
   }
@@ -563,7 +590,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * @param {{ intervalMs?: number, timeoutMs?: number }} [options] - Polling options: the poll
    *   interval (default: 2,000 ms) and the overall timeout (default: 180,000 ms).
    * @returns {Promise<TransactionReceipt | undefined>} The transaction receipt, if available.
-   * @throws {Error} If the transaction reverts, or the receipt does not appear before the timeout.
+   * @throws {TransactionError} If the transaction reverts, or the receipt does not appear before the timeout.
    */
   async _waitForReceipt (account, hash, { intervalMs = 2000, timeoutMs = 180000 } = {}) {
     if (typeof account.getTransactionReceipt !== 'function') return undefined
@@ -573,14 +600,14 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
       const receipt = await account.getTransactionReceipt(hash)
       if (receipt) {
         if (receipt.status === 0 || receipt.status === 0n || receipt.status === false) {
-          throw new Error(`Transaction '${hash}' reverted.`)
+          throw new TransactionError(`Transaction '${hash}' reverted.`, hash)
         }
         return receipt
       }
       await new Promise(resolve => setTimeout(resolve, intervalMs))
     }
 
-    throw new Error(`Timed out waiting for transaction '${hash}' to be mined.`)
+    throw new TransactionError(`Timed out waiting for transaction '${hash}' to be mined.`, hash)
   }
 
   /**
@@ -589,7 +616,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * @protected
    * @param {string | number} identifier - The chain identifier.
    * @returns {Promise<SymbiosisChain>} The resolved chain.
-   * @throws {Error} If the chain is not supported by Symbiosis.
+   * @throws {UnsupportedChainError} If the chain is not supported by Symbiosis.
    */
   async _resolveChain (identifier) {
     const chains = await this._getChains()
@@ -605,7 +632,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
       if (chain) return chain
     }
 
-    throw new Error(`Chain '${identifier}' is not supported by Symbiosis. Use getSupportedChains() to list the supported chains.`)
+    throw new UnsupportedChainError(identifier)
   }
 
   /**
@@ -618,11 +645,12 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * @param {SymbiosisChain} chain - The chain to resolve the token on.
    * @param {string} identifier - The token identifier.
    * @returns {Promise<SymbiosisToken>} The resolved Symbiosis token.
-   * @throws {Error} If the token is not in the Symbiosis token list.
+   * @throws {ValidationError} If the token identifier is not a string.
+   * @throws {UnsupportedTokenError} If the token is not in the Symbiosis token list.
    */
   async _resolveToken (chain, identifier) {
     if (typeof identifier !== 'string') {
-      throw new Error('Token identifiers must be strings.')
+      throw new ValidationError('Token identifiers must be strings.')
     }
 
     const tokens = await this._getTokens()
@@ -639,7 +667,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
     })
 
     if (!token) {
-      throw new Error(`Token '${identifier}' on chain '${chain.name}' is not in the Symbiosis token list. Use getSupportedTokens() to list the supported tokens.`)
+      throw new UnsupportedTokenError(identifier, chain.name)
     }
     return token
   }
