@@ -37,4 +37,23 @@
 
 /** @typedef {import('./src/symbiosis-protocol.js').SymbiosisProtocolConfig} SymbiosisProtocolConfig */
 
-export { default } from './src/symbiosis-protocol.js'
+export { default, default as SymbiosisProtocol } from './src/symbiosis-protocol.js'
+
+// Re-export the WDK swidge interface this module implements, so integrators can
+// reference it (e.g. for typing) without a separate @tetherto/wdk-wallet import.
+export { ISwidgeProtocol } from '@tetherto/wdk-wallet/protocols'
+
+// Typed errors thrown by the module (see the error types table in the README).
+export {
+  SymbiosisError,
+  ConfigurationError,
+  ValidationError,
+  ExactOutNotSupportedError,
+  UnsupportedChainError,
+  UnsupportedTokenError,
+  ReadOnlyAccountError,
+  UnsupportedRouteError,
+  FeeLimitExceededError,
+  TransactionError,
+  ApiError
+} from './src/errors.js'

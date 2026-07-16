@@ -14,6 +14,8 @@
 
 'use strict'
 
+import { ApiError } from './errors.js'
+
 export const DEFAULT_API_URL = 'https://api.symbiosis.finance/crosschain'
 
 /**
@@ -222,7 +224,7 @@ export default class SymbiosisApiClient {
    * @param {string} path - The API path.
    * @param {Record<string, unknown>} [body] - The optional JSON request body.
    * @returns {Promise<any>} The parsed JSON response.
-   * @throws {Error} If the request fails or the API returns a non-2xx status.
+   * @throws {ApiError} If the request fails or the API returns a non-2xx status.
    */
   async _request (method, path, body) {
     const res = await fetch(this._apiUrl + path, {
@@ -241,10 +243,7 @@ export default class SymbiosisApiClient {
       const message = json?.message ??
         (Array.isArray(json?.errors) ? json.errors.map(e => e.message ?? e).join('; ') : null) ??
         (text || res.statusText)
-      const error = new Error(`Symbiosis API request failed (${res.status}): ${message}`)
-      error.status = res.status
-      error.response = json
-      throw error
+      throw new ApiError(`Symbiosis API request failed (${res.status}): ${message}`, res.status, json)
     }
 
     return json
