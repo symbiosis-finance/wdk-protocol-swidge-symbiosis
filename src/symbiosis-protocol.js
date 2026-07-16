@@ -104,8 +104,9 @@ const STATUS_BY_CODE = {
   '-1': 'pending',
   0: 'completed',
   1: 'pending',
-  // 2 (stuck): the operation requires a manual revert
-  2: 'action-required',
+  // 2 (stuck): non-terminal — no manual action is required; the protocol resolves
+  // it on its own (either completing or refunding), so keep tracking it as pending
+  2: 'pending',
   3: 'refunded'
 }
 

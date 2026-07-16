@@ -25,7 +25,7 @@ npm run build:types    # tsc — regenerates types/ from JSDoc; run after changi
   - `slippage` is in basis points (WDK options use decimals: `0.02` → `200`).
   - Native tokens have `address: ''`; TON/Solana tokens carry their real addresses in `attributes.ton`/`attributes.solana` (the top-level `address` is a synthetic EVM-style id). Always send the full token object (address, chainId, decimals, attributes) resolved from the cached `/v2/tokens` list.
   - Do **not** send `revertableAddresses`: if present, the API requires an entry per chain including the destination; omitting it uses correct server-side defaults.
-  - Status codes: `-1` not-found (treated as `pending` — tx may not be indexed yet), `0` → `completed`, `1` → `pending`, `2` (stuck) → `action-required`, `3` (reverted) → `refunded`.
+  - Status codes: `-1` not-found (treated as `pending` — tx may not be indexed yet), `0` → `completed`, `1` → `pending`, `2` (stuck) → `pending` (non-terminal; Symbiosis resolves it automatically, no manual action needed), `3` (reverted) → `refunded`.
 - **Execution dispatch** on the response `type`: `evm` (approve to `approveTo` unless native/`skipApproval`, then send calldata), `ton` (send each message as `{to, value, body}`), `btc` (transfer to generated deposit address; uses `/v2/swap`, rate-limited 1 rps). `tron` and `solana` source routes throw — the WDK Tron wallet has no contract calls and the WDK Solana wallet doesn't accept serialized transactions.
 - **Exact-out is unsupported** by Symbiosis: `toTokenAmount` in options must throw.
 - **Swidge id format**: `'<sourceChainId>:<sourceTxHash>'` — keeps `getSwidgeStatus(id)` self-contained.

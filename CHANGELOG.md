@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All interface methods now throw the typed errors above instead of raw `Error`
   instances. Messages are unchanged, so existing message-based handling keeps
   working. `ApiError` continues to carry the HTTP `status` and parsed `response`.
+- `getSwidgeStatus` now maps the Symbiosis "stuck" status code (`2`) to `pending`
+  instead of `action-required`: the state is non-terminal and Symbiosis resolves
+  it automatically (completing or refunding), so no manual action is required.
 
 ## [1.0.4]
 
