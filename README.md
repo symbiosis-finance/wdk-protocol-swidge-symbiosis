@@ -102,6 +102,8 @@ const quote = await symbiosis.quoteSwidge({
 new SymbiosisProtocol(account, {
   chain: 'Ethereum',          // required for quoting/execution: Symbiosis chain id or name of the account's chain
   apiUrl: 'https://api.symbiosis.finance/crosschain', // optional API override
+  timeoutMs: 30000,           // Symbiosis API request timeout in milliseconds
+  partnerId: 'wdk',           // X-Partner-Id header sent to the Symbiosis API (registered partners get higher rate limits)
   defaultSlippage: 0.02,      // default slippage when options.slippage is omitted
   partnerAddress: '0x...',    // registered Symbiosis partner address (protocol fee share)
   refundAddress: 'bc1q...',   // default refund address for deposit-address routes (e.g. from Bitcoin)
@@ -123,8 +125,8 @@ Quoting works for every Symbiosis route. Execution through a bound WDK wallet ac
 | Source chain | Route type | Execution |
 |---|---|---|
 | EVM chains | `evm` | ✅ Approve (if needed) + calldata transaction via `WalletAccountEvm` / `WalletAccountEvmErc4337` |
-| TON | `ton` | ✅ Route messages sent via `WalletAccountTon` (`to`/`value`/`body`) |
 | Bitcoin | `btc` | ✅ Transfer to the generated deposit address via `WalletAccountBtc` (set `refundAddress`) |
+| TON | `ton` | ⚠️ Quote only — the WDK TON wallet account does not accept the raw BoC message payloads Symbiosis routes require yet |
 | Tron | `tron` | ⚠️ Quote only — the WDK Tron wallet account does not expose smart-contract calls yet |
 | Solana | `solana` | ⚠️ Quote only — the WDK Solana wallet account does not accept serialized route transactions yet |
 
@@ -148,13 +150,12 @@ A just-submitted source transaction is not indexed by the API for a while (~30s)
 
 ## Fees
 
-Symbiosis returns an itemised fee breakdown on every quote and swap. Each entry is mapped to a WDK `SwidgeFee` by its `provider` field:
+Symbiosis returns an itemised fee breakdown on every quote and swap. Each entry is mapped to a WDK `SwidgeFee`:
 
-| Symbiosis `fees[].provider` | `SwidgeFee.type` | Notes |
-|---|---|---|
-| `symbiosis` | `protocol` | The Symbiosis cross-chain / protocol fee. |
-| `partner` | `affiliate` | The partner (affiliate) share, when a `partnerAddress` is configured. |
-| any other value | `protocol` | Fallback for unrecognised providers. |
+| Symbiosis fee entry | `SwidgeFee.type` |
+|---|---|
+| The partner (affiliate) share, reported with the `Partner fee` description when a `partnerAddress` is configured | `affiliate` |
+| Every other fee (cross-chain, on-chain routing, etc.) | `protocol` |
 
 The mapped `SwidgeFee` carries `amount` (base units), `token`, `chain`, `description`, and `included: true` — Symbiosis quotes are net of fees, so they are always already reflected in `toTokenAmount`.
 
@@ -198,17 +199,17 @@ try {
 | `UnsupportedChainError` | `SymbiosisError` | A chain identifier cannot be resolved to a Symbiosis-supported chain. Carries `.identifier`. |
 | `UnsupportedTokenError` | `SymbiosisError` | A token identifier is not in the Symbiosis token list for the chain. Carries `.identifier`. |
 | `ReadOnlyAccountError` | `SymbiosisError` | Execution is attempted without a signing account, with a read-only account, or with an account lacking a required capability (e.g. ERC-20 approvals). |
-| `UnsupportedRouteError` | `SymbiosisError` | The route type returned by Symbiosis (`tron`/`solana`) cannot be executed through the bound WDK account. Carries `.type`. |
+| `UnsupportedRouteError` | `SymbiosisError` | The route type returned by Symbiosis (`ton`/`tron`/`solana`) cannot be executed through the bound WDK account. Carries `.type`. |
 | `FeeLimitExceededError` | `SymbiosisError` | The quoted network/protocol fee exceeds the configured `maxNetworkFeeBps`/`maxProtocolFeeBps`. Carries `.feeType`, `.bps`, `.cap`. |
 | `TransactionError` | `SymbiosisError` | A transaction submitted during execution reverts, or its receipt does not appear before the timeout. Carries `.hash`. |
-| `ApiError` | `SymbiosisError` | The Symbiosis REST API returned a non-2xx response. Carries `.status` and the parsed `.response`. |
+| `ApiError` | `SymbiosisError` | The Symbiosis REST API returned a non-2xx response, or the request failed or timed out before a response was received (`.status` is `0`). Carries `.status` and the parsed `.response`. |
 
 ## Notes and limitations
 
 - **Exact-out is not supported**: pass `fromTokenAmount`; `toTokenAmount` throws.
-- **ERC-20 approvals**: when the wallet account can read allowances (EVM accounts expose `getAllowance`), the approval is skipped if the existing allowance already covers the amount; otherwise it is sent before the EVM route. Accounts without allowance reads always approve. Set `skipApproval: true` to suppress approvals entirely if you manage allowances yourself.
+- **ERC-20 approvals**: when the wallet account can read allowances (EVM accounts expose `getAllowance`), the approval is skipped if the existing allowance already covers the amount; otherwise it is sent before the EVM route. Tokens that require resetting a non-zero allowance before granting a new one (e.g. USDT on Ethereum) are reset to zero first. Accounts without allowance reads always approve. Set `skipApproval: true` to suppress approvals entirely if you manage allowances yourself.
 - **Fee caps** are valued in USD when the API provides price data; otherwise amounts normalized by token decimals are compared directly, which is approximate for fee tokens whose unit value differs from the input token.
-- **Bitcoin routes** call `/v2/swap`, which is rate-limited to 1 request per second by the Symbiosis API.
+- **API requests** time out after 30 seconds by default (`timeoutMs`); `/v2/swap` is rate-limited to 1 request per second per IP by the Symbiosis API.
 - Discovery responses (`/v1/chains`, `/v2/tokens`) are cached for 10 minutes per protocol instance.
 
 ## Development

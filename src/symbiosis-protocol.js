@@ -77,6 +77,9 @@ import {
  *   Symbiosis chain id or the chain name as returned by {@link SymbiosisProtocol#getSupportedChains}
  *   (e.g., `1`, `'Ethereum'`, `'TON'`, `'Bitcoin'`). Required to quote and execute swidge operations.
  * @property {string} [apiUrl] - The base URL of the Symbiosis API (defaults to `https://api.symbiosis.finance/crosschain`).
+ * @property {number} [timeoutMs] - The Symbiosis API request timeout in milliseconds (defaults to 30,000).
+ * @property {string} [partnerId] - The `X-Partner-Id` header value identifying the integrator to the
+ *   Symbiosis API; registered partners get higher API rate limits (defaults to `'wdk'`).
  * @property {number} [defaultSlippage] - The default slippage tolerance as a decimal (e.g., 0.01 for 1%). Defaults to 0.02.
  * @property {string} [partnerAddress] - The EVM address of a registered Symbiosis partner to receive a share of the protocol fee.
  * @property {string} [refundAddress] - The default refund address for deposit-address routes (e.g., swaps from Bitcoin).
@@ -94,10 +97,13 @@ const CHAIN_TYPES = {
   solana: 'svm'
 }
 
-const FEE_TYPES = {
-  symbiosis: 'protocol',
-  partner: 'affiliate'
-}
+// The Symbiosis API reports the partner (affiliate) fee share with the 'symbiosis'
+// provider; only the description distinguishes it from the protocol's own fees.
+const PARTNER_FEE_DESCRIPTION = 'Partner fee'
+
+// Chains routed through third-party custodial integrations are out of the scope of
+// this module: they are filtered out of discovery, quoting and status resolution.
+const EXCLUDED_CHAIN_NAMES = new Set(['monero', 'zcash'])
 
 const STATUS_BY_CODE = {
   // -1 (not found): the source transaction may not be indexed yet
@@ -197,9 +203,8 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    *
    * The execution path depends on the route returned by Symbiosis:
    * - `evm` routes approve the input token (unless native or `skipApproval` is set) and send the calldata transaction.
-   * - `ton` routes send the returned messages through the TON wallet account.
    * - `btc` routes transfer the input amount to the generated Bitcoin deposit address.
-   * - `tron` and `solana` source routes are not yet executable through WDK wallet accounts and throw.
+   * - `ton`, `tron` and `solana` source routes are not yet executable through WDK wallet accounts and throw.
    *
    * @param {SwidgeOptions} options - The swidge options.
    * @param {SwidgeProtocolConfig} [config] - Optional execution configuration overriding the instance fee caps.
@@ -230,21 +235,8 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
     switch (response.type) {
       case 'evm': {
         const isNative = body.tokenAmountIn.address === ''
-        if (!isNative && !this._config.skipApproval && await this._needsApproval(account, body.tokenAmountIn.address, response.approveTo, amount)) {
-          if (typeof account.approve !== 'function') {
-            throw new ReadOnlyAccountError('Cannot approve the input token: the wallet account does not support ERC-20 approvals.')
-          }
-          const approval = await account.approve({
-            token: body.tokenAmountIn.address,
-            spender: response.approveTo,
-            amount
-          })
-          if (approval?.hash) {
-            transactions.push({ hash: approval.hash, chain: srcChainId, type: 'approval' })
-            // Wait for the approval to be mined: the swap transaction below spends the
-            // freshly granted allowance and would revert if it is not yet confirmed.
-            await this._waitForReceipt(account, approval.hash)
-          }
+        if (!isNative && !this._config.skipApproval) {
+          await this._ensureAllowance(account, body.tokenAmountIn.address, response.approveTo, amount, srcChainId, transactions)
         }
 
         const result = await account.sendTransaction({
@@ -253,18 +245,6 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
           data: response.tx.data
         })
         hash = result.hash
-        break
-      }
-
-      case 'ton': {
-        for (const message of response.tx.messages) {
-          const result = await account.sendTransaction({
-            to: message.address,
-            value: Number(message.amount),
-            body: message.payload
-          })
-          hash = result.hash
-        }
         break
       }
 
@@ -436,6 +416,15 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
     if (options.fromTokenAmount == null) {
       throw new ValidationError('The fromTokenAmount option is required.')
     }
+    let amountIn
+    try {
+      amountIn = BigInt(options.fromTokenAmount)
+    } catch {
+      throw new ValidationError('The fromTokenAmount option must be an integer amount in base units.')
+    }
+    if (amountIn <= 0n) {
+      throw new ValidationError('The fromTokenAmount option must be a positive amount in base units.')
+    }
     if (this._config.chain == null) {
       throw new ConfigurationError('The symbiosis protocol configuration is missing the \'chain\' option identifying the source chain of the bound account.')
     }
@@ -473,7 +462,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
         decimals: tokenIn.decimals,
         symbol: tokenIn.symbol,
         ...(tokenIn.attributes ? { attributes: tokenIn.attributes } : {}),
-        amount: BigInt(options.fromTokenAmount).toString()
+        amount: amountIn.toString()
       },
       tokenOut: {
         address: tokenOut.address,
@@ -496,6 +485,21 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
   }
 
   /**
+   * Maps a Symbiosis fee entry to a swidge fee type.
+   *
+   * The API reports every fee — including the partner share — under provider-specific
+   * keys with `'symbiosis'` for its own; the partner share is only distinguishable by
+   * its description, and everything else is treated as a protocol fee.
+   *
+   * @protected
+   * @param {SymbiosisFeeEntry} fee - The Symbiosis fee entry.
+   * @returns {'protocol' | 'affiliate'} The swidge fee type.
+   */
+  _feeType (fee) {
+    return fee.description === PARTNER_FEE_DESCRIPTION ? 'affiliate' : 'protocol'
+  }
+
+  /**
    * Maps Symbiosis fee entries to the shared swidge fee shape.
    *
    * @protected
@@ -504,7 +508,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    */
   _mapFees (fees) {
     return (fees ?? []).map(fee => ({
-      type: FEE_TYPES[fee.provider] ?? 'protocol',
+      type: this._feeType(fee),
       amount: BigInt(fee.value.amount),
       token: fee.value.address === '' ? fee.value.symbol : fee.value.address,
       chain: fee.value.chainId,
@@ -538,7 +542,7 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
 
     const totals = { network: 0, protocol: 0 }
     for (const fee of response.fees ?? []) {
-      const type = FEE_TYPES[fee.provider] ?? 'protocol'
+      const type = this._feeType(fee)
       if (totals[type] === undefined) continue
       const feeAmount = Number(fee.value.amount) / 10 ** fee.value.decimals
       const priceFee = fee.value.priceUsd > 0 ? fee.value.priceUsd : null
@@ -557,28 +561,56 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
   }
 
   /**
-   * Determines whether an ERC-20 approval transaction is required before executing an EVM route.
+   * Ensures the route's spender holds a sufficient ERC-20 allowance before executing an EVM route.
    *
    * When the wallet account can read allowances (EVM accounts expose {@link getAllowance}),
    * the existing allowance is compared against the input amount and the approval is skipped
-   * when it already covers the spend. Accounts without allowance reads (e.g., non-EVM ones,
-   * for which the concept does not apply) always approve, preserving the previous behavior.
+   * when it already covers the spend. Tokens like mainnet USDT require a non-zero allowance
+   * to be reset to zero before granting a new one (the WDK EVM account enforces this), so a
+   * non-zero insufficient allowance is reset first. Accounts without allowance reads (e.g.,
+   * non-EVM ones, for which the concept does not apply) always approve.
+   *
+   * Every submitted approval is appended to `transactions` and awaited until mined: the swap
+   * transaction spends the freshly granted allowance and would revert if it is not yet confirmed.
    *
    * @protected
    * @param {IWalletAccount} account - The bound wallet account.
    * @param {string} token - The input token address.
    * @param {string} spender - The address that will spend the token (the route's `approveTo`).
    * @param {bigint} amount - The input amount in base units.
-   * @returns {Promise<boolean>} Whether an approval transaction is required.
+   * @param {string | number} chain - The source chain id, used to label the approval transactions.
+   * @param {SwidgeTransaction[]} transactions - The execution transaction list to append approvals to.
+   * @returns {Promise<void>}
+   * @throws {ReadOnlyAccountError} If an approval is required but the account does not support approvals.
+   * @throws {TransactionError} If an approval transaction reverts or times out.
    */
-  async _needsApproval (account, token, spender, amount) {
-    if (typeof account.getAllowance !== 'function') return true
-    try {
-      const allowance = await account.getAllowance(token, spender)
-      return BigInt(allowance) < amount
-    } catch {
-      // If the allowance cannot be read, fall back to approving unconditionally.
-      return true
+  async _ensureAllowance (account, token, spender, amount, chain, transactions) {
+    let allowance = null
+    if (typeof account.getAllowance === 'function') {
+      try {
+        allowance = BigInt(await account.getAllowance(token, spender))
+      } catch {
+        // If the allowance cannot be read, fall back to approving unconditionally.
+      }
+    }
+    if (allowance != null && allowance >= amount) return
+
+    if (typeof account.approve !== 'function') {
+      throw new ReadOnlyAccountError('Cannot approve the input token: the wallet account does not support ERC-20 approvals.')
+    }
+
+    if (allowance != null && allowance > 0n) {
+      const reset = await account.approve({ token, spender, amount: 0n })
+      if (reset?.hash) {
+        transactions.push({ hash: reset.hash, chain, type: 'approval' })
+        await this._waitForReceipt(account, reset.hash)
+      }
+    }
+
+    const approval = await account.approve({ token, spender, amount })
+    if (approval?.hash) {
+      transactions.push({ hash: approval.hash, chain, type: 'approval' })
+      await this._waitForReceipt(account, approval.hash)
     }
   }
 
@@ -676,21 +708,33 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
   /**
    * Fetches the supported chains, caching the response.
    *
+   * Chains outside the scope of this module (see {@link EXCLUDED_CHAIN_NAMES}) are filtered out.
+   *
    * @protected
    * @returns {Promise<SymbiosisChain[]>} The supported chains.
    */
   async _getChains () {
-    return this._cachedDiscovery('chains', () => this._api.getChains())
+    return this._cachedDiscovery('chains', async () => {
+      const chains = await this._api.getChains()
+      return chains.filter(chain => !EXCLUDED_CHAIN_NAMES.has(chain.name.toLowerCase()))
+    })
   }
 
   /**
    * Fetches the supported tokens, caching the response.
    *
+   * Tokens on chains outside the supported chain list (including the excluded ones) are filtered out.
+   *
    * @protected
    * @returns {Promise<SymbiosisToken[]>} The supported tokens.
    */
   async _getTokens () {
-    return this._cachedDiscovery('tokens', () => this._api.getTokens())
+    const [chains, tokens] = await Promise.all([
+      this._getChains(),
+      this._cachedDiscovery('tokens', () => this._api.getTokens())
+    ])
+    const chainIds = new Set(chains.map(chain => chain.id))
+    return tokens.filter(token => chainIds.has(token.chainId))
   }
 
   /**

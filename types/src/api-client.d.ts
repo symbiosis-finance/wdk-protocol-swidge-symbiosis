@@ -1,7 +1,12 @@
 export const DEFAULT_API_URL: "https://api.symbiosis.finance/crosschain";
+export const DEFAULT_TIMEOUT_MS: 30000;
+export const DEFAULT_PARTNER_ID: "wdk";
 /**
  * @typedef {Object} SymbiosisApiClientConfig
  * @property {string} [apiUrl] - The base URL of the Symbiosis API (defaults to {@link DEFAULT_API_URL}).
+ * @property {number} [timeoutMs] - The request timeout in milliseconds (defaults to {@link DEFAULT_TIMEOUT_MS}).
+ * @property {string} [partnerId] - The `X-Partner-Id` header value identifying the integrator to the
+ *   Symbiosis API (defaults to {@link DEFAULT_PARTNER_ID}; pass `''` to omit the header).
  */
 /**
  * @typedef {Object} SymbiosisChain
@@ -123,8 +128,10 @@ export default class SymbiosisApiClient {
      *
      * @param {SymbiosisApiClientConfig} [config] - The client configuration.
      */
-    constructor({ apiUrl }?: SymbiosisApiClientConfig);
+    constructor({ apiUrl, timeoutMs, partnerId }?: SymbiosisApiClientConfig);
     _apiUrl: string;
+    _timeoutMs: number;
+    _partnerId: string;
     /**
      * Lists the chains supported by the Symbiosis protocol.
      *
@@ -170,7 +177,8 @@ export default class SymbiosisApiClient {
      * @param {string} path - The API path.
      * @param {Record<string, unknown>} [body] - The optional JSON request body.
      * @returns {Promise<any>} The parsed JSON response.
-     * @throws {ApiError} If the request fails or the API returns a non-2xx status.
+     * @throws {ApiError} If the API returns a non-2xx status (carrying the HTTP status), or the
+     *   request fails or times out before a response is received (carrying status `0`).
      */
     protected _request(method: string, path: string, body?: Record<string, unknown>): Promise<any>;
 }
@@ -179,6 +187,15 @@ export type SymbiosisApiClientConfig = {
      * - The base URL of the Symbiosis API (defaults to {@link DEFAULT_API_URL}).
      */
     apiUrl?: string;
+    /**
+     * - The request timeout in milliseconds (defaults to {@link DEFAULT_TIMEOUT_MS}).
+     */
+    timeoutMs?: number;
+    /**
+     * - The `X-Partner-Id` header value identifying the integrator to the
+     * Symbiosis API (defaults to {@link DEFAULT_PARTNER_ID}; pass `''` to omit the header).
+     */
+    partnerId?: string;
 };
 export type SymbiosisChain = {
     /**

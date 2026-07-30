@@ -51,6 +51,18 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      */
     protected _buildSwapRequest(options: SwidgeOptions): Promise<SwapRequestBuildResult>;
     /**
+     * Maps a Symbiosis fee entry to a swidge fee type.
+     *
+     * The API reports every fee — including the partner share — under provider-specific
+     * keys with `'symbiosis'` for its own; the partner share is only distinguishable by
+     * its description, and everything else is treated as a protocol fee.
+     *
+     * @protected
+     * @param {SymbiosisFeeEntry} fee - The Symbiosis fee entry.
+     * @returns {'protocol' | 'affiliate'} The swidge fee type.
+     */
+    protected _feeType(fee: SymbiosisFeeEntry): "protocol" | "affiliate";
+    /**
      * Maps Symbiosis fee entries to the shared swidge fee shape.
      *
      * @protected
@@ -75,21 +87,30 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      */
     protected _checkFeeLimits(response: SymbiosisSwapResponse, body: SymbiosisSwapRequest, tokenIn: SymbiosisToken, config?: SwidgeProtocolConfig): void;
     /**
-     * Determines whether an ERC-20 approval transaction is required before executing an EVM route.
+     * Ensures the route's spender holds a sufficient ERC-20 allowance before executing an EVM route.
      *
      * When the wallet account can read allowances (EVM accounts expose {@link getAllowance}),
      * the existing allowance is compared against the input amount and the approval is skipped
-     * when it already covers the spend. Accounts without allowance reads (e.g., non-EVM ones,
-     * for which the concept does not apply) always approve, preserving the previous behavior.
+     * when it already covers the spend. Tokens like mainnet USDT require a non-zero allowance
+     * to be reset to zero before granting a new one (the WDK EVM account enforces this), so a
+     * non-zero insufficient allowance is reset first. Accounts without allowance reads (e.g.,
+     * non-EVM ones, for which the concept does not apply) always approve.
+     *
+     * Every submitted approval is appended to `transactions` and awaited until mined: the swap
+     * transaction spends the freshly granted allowance and would revert if it is not yet confirmed.
      *
      * @protected
      * @param {IWalletAccount} account - The bound wallet account.
      * @param {string} token - The input token address.
      * @param {string} spender - The address that will spend the token (the route's `approveTo`).
      * @param {bigint} amount - The input amount in base units.
-     * @returns {Promise<boolean>} Whether an approval transaction is required.
+     * @param {string | number} chain - The source chain id, used to label the approval transactions.
+     * @param {SwidgeTransaction[]} transactions - The execution transaction list to append approvals to.
+     * @returns {Promise<void>}
+     * @throws {ReadOnlyAccountError} If an approval is required but the account does not support approvals.
+     * @throws {TransactionError} If an approval transaction reverts or times out.
      */
-    protected _needsApproval(account: IWalletAccount, token: string, spender: string, amount: bigint): Promise<boolean>;
+    protected _ensureAllowance(account: IWalletAccount, token: string, spender: string, amount: bigint, chain: string | number, transactions: SwidgeTransaction[]): Promise<void>;
     /**
      * Waits for a transaction to be mined by polling the wallet account for its receipt.
      *
@@ -131,12 +152,16 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
     /**
      * Fetches the supported chains, caching the response.
      *
+     * Chains outside the scope of this module (see {@link EXCLUDED_CHAIN_NAMES}) are filtered out.
+     *
      * @protected
      * @returns {Promise<SymbiosisChain[]>} The supported chains.
      */
     protected _getChains(): Promise<SymbiosisChain[]>;
     /**
      * Fetches the supported tokens, caching the response.
+     *
+     * Tokens on chains outside the supported chain list (including the excluded ones) are filtered out.
      *
      * @protected
      * @returns {Promise<SymbiosisToken[]>} The supported tokens.
@@ -212,6 +237,15 @@ export type SymbiosisProtocolConfig = {
      * - The base URL of the Symbiosis API (defaults to `https://api.symbiosis.finance/crosschain`).
      */
     apiUrl?: string;
+    /**
+     * - The Symbiosis API request timeout in milliseconds (defaults to 30,000).
+     */
+    timeoutMs?: number;
+    /**
+     * - The `X-Partner-Id` header value identifying the integrator to the
+     * Symbiosis API; registered partners get higher API rate limits (defaults to `'wdk'`).
+     */
+    partnerId?: string;
     /**
      * - The default slippage tolerance as a decimal (e.g., 0.01 for 1%). Defaults to 0.02.
      */

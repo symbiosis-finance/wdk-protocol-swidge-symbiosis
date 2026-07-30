@@ -217,6 +217,53 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
       })).rejects.toThrow(ValidationError)
     })
 
+    test('should throw if the fromTokenAmount option is zero or negative', async () => {
+      for (const fromTokenAmount of [0n, -1n]) {
+        await expect(protocol.quoteSwidge({
+          fromToken: USDT_ETH,
+          toToken: USDC_ARB,
+          toChain: 42161,
+          fromTokenAmount
+        })).rejects.toThrow(ValidationError)
+      }
+    })
+
+    test('should throw a ValidationError if the fromTokenAmount option is not an integer', async () => {
+      await expect(protocol.quoteSwidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 1.5
+      })).rejects.toThrow(ValidationError)
+    })
+
+    test('should map the partner fee share to the affiliate fee type', async () => {
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        '/v2/quote': {
+          ...DUMMY_EVM_SWAP_RESPONSE,
+          fees: [
+            ...DUMMY_EVM_SWAP_RESPONSE.fees,
+            {
+              provider: 'symbiosis',
+              description: 'Partner fee',
+              value: { symbol: 'USDC', address: USDC_ARB, chainId: 42161, decimals: 6, amount: '50000', priceUsd: 1 }
+            }
+          ]
+        }
+      })
+
+      const quote = await protocol.quoteSwidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 100000000n
+      })
+
+      expect(quote.fees.map(f => f.type)).toEqual(['protocol', 'affiliate'])
+    })
+
     test('should throw if a token identifier is not a string', async () => {
       await expect(protocol.quoteSwidge({
         fromToken: 42,
@@ -303,8 +350,38 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
       expect(account.approve).not.toHaveBeenCalled()
     })
 
-    test('should approve when the existing allowance is insufficient', async () => {
+    test('should reset a non-zero insufficient allowance to zero before approving (USDT-style tokens)', async () => {
       account.getAllowance = jest.fn(async () => 1n)
+      account.getTransactionReceipt = jest.fn(async () => ({ status: 1 }))
+
+      const result = await protocol.swidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 100000000n
+      })
+
+      expect(account.approve).toHaveBeenNthCalledWith(1, {
+        token: USDT_ETH,
+        spender: DUMMY_APPROVE_GATEWAY,
+        amount: 0n
+      })
+      expect(account.approve).toHaveBeenNthCalledWith(2, {
+        token: USDT_ETH,
+        spender: DUMMY_APPROVE_GATEWAY,
+        amount: 100000000n
+      })
+      // Both approvals are surfaced and mined before the swap transaction is sent.
+      expect(account.getTransactionReceipt).toHaveBeenCalledTimes(2)
+      expect(result.transactions).toEqual([
+        { hash: DUMMY_APPROVE_TX_HASH, chain: 1, type: 'approval' },
+        { hash: DUMMY_APPROVE_TX_HASH, chain: 1, type: 'approval' },
+        { hash: DUMMY_SOURCE_TX_HASH, chain: 1, type: 'source' }
+      ])
+    })
+
+    test('should approve without a reset when the existing allowance is zero', async () => {
+      account.getAllowance = jest.fn(async () => 0n)
 
       await protocol.swidge({
         fromToken: USDT_ETH,
@@ -313,6 +390,7 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
         fromTokenAmount: 100000000n
       })
 
+      expect(account.approve).toHaveBeenCalledTimes(1)
       expect(account.approve).toHaveBeenCalledWith({
         token: USDT_ETH,
         spender: DUMMY_APPROVE_GATEWAY,
@@ -418,7 +496,9 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
       })
     })
 
-    test('should perform a TON swidge operation by sending route messages', async () => {
+    test('should throw on a TON source route not executable through WDK accounts', async () => {
+      // The WDK TON wallet account encodes string bodies as text comments, not as
+      // the BoC cells Symbiosis routes require, so TON execution must refuse to run.
       global.fetch = mockFetch({
         '/v1/chains': DUMMY_CHAINS,
         '/v2/tokens': DUMMY_TOKENS,
@@ -433,30 +513,15 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
       })
       const tonProtocol = new SymbiosisProtocol(account, { chain: 'TON' })
 
-      const result = await tonProtocol.swidge({
+      await expect(tonProtocol.swidge({
         fromToken: TON_USDT_ADDRESS,
         toToken: USDC_ARB,
         toChain: 42161,
         recipient: SENDER,
         fromTokenAmount: 1000000n
-      })
+      })).rejects.toThrow(UnsupportedRouteError)
 
-      expect(account.sendTransaction).toHaveBeenCalledWith({
-        to: DUMMY_TON_ROUTER_ADDRESS,
-        value: 300000000,
-        body: DUMMY_TON_PAYLOAD
-      })
-      expect(result).toEqual({
-        id: `85918:${DUMMY_SOURCE_TX_HASH}`,
-        hash: DUMMY_SOURCE_TX_HASH,
-        fees: DUMMY_MAPPED_FEES,
-        fromTokenAmount: 1000000n,
-        toTokenAmount: 99263949n,
-        toTokenAmountMin: 97269184n,
-        transactions: [
-          { hash: DUMMY_SOURCE_TX_HASH, chain: 85918, type: 'source' }
-        ]
-      })
+      expect(account.sendTransaction).not.toHaveBeenCalled()
     })
 
     test('should throw on a Tron source route not executable through WDK accounts', async () => {
@@ -774,6 +839,103 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
       // The rejected discovery must not be cached: a second call retries the fetch.
       await expect(protocol.getSupportedTokens()).rejects.toThrow(ApiError)
       expect(calls).toBe(2)
+    })
+  })
+
+  describe('out-of-scope chains', () => {
+    const EXCLUDED_CHAINS = [
+      { id: 999001, name: 'Monero', explorer: '', icon: '', hasDepository: false },
+      { id: 999002, name: 'Zcash', explorer: '', icon: '', hasDepository: false }
+    ]
+
+    beforeEach(() => {
+      global.fetch = mockFetch({
+        '/v1/chains': [...DUMMY_CHAINS, ...EXCLUDED_CHAINS],
+        '/v2/tokens': [
+          ...DUMMY_TOKENS,
+          { symbol: 'XMR', name: 'Monero', address: '', chainId: 999001, decimals: 12, priceUsd: 200 }
+        ]
+      })
+    })
+
+    test('should hide excluded chains from discovery', async () => {
+      const chains = await protocol.getSupportedChains()
+
+      expect(chains.map(c => c.name)).not.toEqual(expect.arrayContaining(['Monero', 'Zcash']))
+      expect(chains).toHaveLength(DUMMY_CHAINS.length)
+    })
+
+    test('should hide tokens on excluded chains from discovery', async () => {
+      const tokens = await protocol.getSupportedTokens()
+
+      expect(tokens.find(t => t.symbol === 'XMR')).toBeUndefined()
+      expect(tokens).toHaveLength(DUMMY_TOKENS.length)
+    })
+
+    test('should not resolve excluded chains for quoting', async () => {
+      await expect(protocol.quoteSwidge({
+        fromToken: USDT_ETH,
+        toToken: 'XMR',
+        toChain: 'Monero',
+        fromTokenAmount: 100000000n
+      })).rejects.toThrow(UnsupportedChainError)
+    })
+  })
+
+  describe('api client', () => {
+    test('should send the default X-Partner-Id header', async () => {
+      await protocol.getSupportedChains()
+
+      const [, init] = global.fetch.mock.calls[0]
+      expect(init.headers['X-Partner-Id']).toBe('wdk')
+    })
+
+    test('should allow overriding and omitting the X-Partner-Id header', async () => {
+      const custom = new SymbiosisProtocol(account, { chain: 'Ethereum', partnerId: 'my-app' })
+      await custom.getSupportedChains()
+      expect(global.fetch.mock.calls.at(-1)[1].headers['X-Partner-Id']).toBe('my-app')
+
+      const anonymous = new SymbiosisProtocol(account, { chain: 'Ethereum', partnerId: '' })
+      await anonymous.getSupportedChains()
+      expect(global.fetch.mock.calls.at(-1)[1].headers).not.toHaveProperty('X-Partner-Id')
+    })
+
+    test('should abort a hung request after the configured timeout', async () => {
+      global.fetch = jest.fn((url, init) => new Promise((resolve, reject) => {
+        init.signal.addEventListener('abort', () => reject(new Error('The operation was aborted')))
+      }))
+      const impatient = new SymbiosisProtocol(account, { chain: 'Ethereum', timeoutMs: 20 })
+
+      const err = await impatient.getSupportedChains().catch(e => e)
+
+      expect(err).toBeInstanceOf(ApiError)
+      expect(err.status).toBe(0)
+      expect(err.message).toContain('timed out after 20 ms')
+    })
+
+    test('should wrap network failures in an ApiError with status 0', async () => {
+      const cause = new TypeError('fetch failed')
+      global.fetch = jest.fn(async () => { throw cause })
+
+      const err = await protocol.getSupportedChains().catch(e => e)
+
+      expect(err).toBeInstanceOf(ApiError)
+      expect(err.status).toBe(0)
+      expect(err.cause).toBe(cause)
+    })
+
+    test('should URL-encode the chain id and hash of status lookups', async () => {
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        '/v2/tx/1/abc%2Fdef%3Axyz': { status: { code: 1, text: 'Pending' } }
+      })
+
+      const status = await protocol.getSwidgeStatus('1:abc/def:xyz')
+
+      expect(status.status).toBe('pending')
+      const txCall = global.fetch.mock.calls.find(([url]) => url.includes('/v2/tx/'))
+      expect(txCall[0]).toBe(`${API_URL}/v2/tx/1/abc%2Fdef%3Axyz`)
     })
   })
 
