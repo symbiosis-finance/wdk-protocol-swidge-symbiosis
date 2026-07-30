@@ -141,7 +141,7 @@ export class ReadOnlyAccountError extends SymbiosisError {
 
 /**
  * Thrown when the route type returned by Symbiosis cannot be executed through the
- * bound WDK wallet account (currently `tron` and `solana` source routes).
+ * bound WDK wallet account (currently `ton`, `tron` and `solana` source routes).
  */
 export class UnsupportedRouteError extends SymbiosisError {
   /**
@@ -220,14 +220,16 @@ export class TransactionError extends SymbiosisError {
 }
 
 /**
- * Thrown when the Symbiosis REST API responds with a non-2xx status. Carries the
- * HTTP status code and the parsed response body so callers can react to specific
- * conditions (e.g. treating a 404 as a not-yet-indexed transaction).
+ * Thrown when the Symbiosis REST API responds with a non-2xx status, or the request
+ * fails or times out before a response is received. Carries the HTTP status code
+ * (`0` for network failures and timeouts) and the parsed response body so callers
+ * can react to specific conditions (e.g. treating a 404 as a not-yet-indexed
+ * transaction).
  */
 export class ApiError extends SymbiosisError {
   /**
    * @param {string} message - The human-readable error message.
-   * @param {number} status - The HTTP status code returned by the API.
+   * @param {number} status - The HTTP status code returned by the API, or `0` if no response was received.
    * @param {any} [response] - The parsed JSON response body, when available.
    */
   constructor (message, status, response) {
@@ -235,7 +237,7 @@ export class ApiError extends SymbiosisError {
     this.name = 'ApiError'
 
     /**
-     * The HTTP status code returned by the API.
+     * The HTTP status code returned by the API, or `0` if no response was received.
      *
      * @type {number}
      */

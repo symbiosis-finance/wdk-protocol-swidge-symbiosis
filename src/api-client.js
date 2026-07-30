@@ -18,9 +18,16 @@ import { ApiError } from './errors.js'
 
 export const DEFAULT_API_URL = 'https://api.symbiosis.finance/crosschain'
 
+export const DEFAULT_TIMEOUT_MS = 30000
+
+export const DEFAULT_PARTNER_ID = 'wdk'
+
 /**
  * @typedef {Object} SymbiosisApiClientConfig
  * @property {string} [apiUrl] - The base URL of the Symbiosis API (defaults to {@link DEFAULT_API_URL}).
+ * @property {number} [timeoutMs] - The request timeout in milliseconds (defaults to {@link DEFAULT_TIMEOUT_MS}).
+ * @property {string} [partnerId] - The `X-Partner-Id` header value identifying the integrator to the
+ *   Symbiosis API (defaults to {@link DEFAULT_PARTNER_ID}; pass `''` to omit the header).
  */
 
 /**
@@ -160,8 +167,10 @@ export default class SymbiosisApiClient {
    *
    * @param {SymbiosisApiClientConfig} [config] - The client configuration.
    */
-  constructor ({ apiUrl } = {}) {
+  constructor ({ apiUrl, timeoutMs, partnerId } = {}) {
     this._apiUrl = (apiUrl ?? DEFAULT_API_URL).replace(/\/+$/, '')
+    this._timeoutMs = timeoutMs ?? DEFAULT_TIMEOUT_MS
+    this._partnerId = partnerId ?? DEFAULT_PARTNER_ID
   }
 
   /**
@@ -213,7 +222,7 @@ export default class SymbiosisApiClient {
    * @returns {Promise<SymbiosisTxStatusResponse>} The operation status.
    */
   async getTxStatus (chainId, hash) {
-    return this._request('GET', `/v2/tx/${chainId}/${hash}`)
+    return this._request('GET', `/v2/tx/${encodeURIComponent(chainId)}/${encodeURIComponent(hash)}`)
   }
 
   /**
@@ -224,28 +233,48 @@ export default class SymbiosisApiClient {
    * @param {string} path - The API path.
    * @param {Record<string, unknown>} [body] - The optional JSON request body.
    * @returns {Promise<any>} The parsed JSON response.
-   * @throws {ApiError} If the request fails or the API returns a non-2xx status.
+   * @throws {ApiError} If the API returns a non-2xx status (carrying the HTTP status), or the
+   *   request fails or times out before a response is received (carrying status `0`).
    */
   async _request (method, path, body) {
-    const res = await fetch(this._apiUrl + path, {
-      method,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined
-    })
+    const headers = {}
+    if (this._partnerId) headers['X-Partner-Id'] = this._partnerId
+    if (body) headers['Content-Type'] = 'application/json'
 
-    const text = await res.text()
-    let json = null
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this._timeoutMs)
+
     try {
-      json = text ? JSON.parse(text) : null
-    } catch {}
+      const res = await fetch(this._apiUrl + path, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal
+      })
 
-    if (!res.ok) {
-      const message = json?.message ??
-        (Array.isArray(json?.errors) ? json.errors.map(e => e.message ?? e).join('; ') : null) ??
-        (text || res.statusText)
-      throw new ApiError(`Symbiosis API request failed (${res.status}): ${message}`, res.status, json)
+      const text = await res.text()
+      let json = null
+      try {
+        json = text ? JSON.parse(text) : null
+      } catch {}
+
+      if (!res.ok) {
+        const message = json?.message ??
+          (Array.isArray(json?.errors) ? json.errors.map(e => e.message ?? e).join('; ') : null) ??
+          (text || res.statusText)
+        throw new ApiError(`Symbiosis API request failed (${res.status}): ${message}`, res.status, json)
+      }
+
+      return json
+    } catch (err) {
+      if (err instanceof ApiError) throw err
+      const apiErr = controller.signal.aborted
+        ? new ApiError(`Symbiosis API request timed out after ${this._timeoutMs} ms: ${method} ${path}`, 0, null)
+        : new ApiError(`Symbiosis API request failed: ${err.message}`, 0, null)
+      apiErr.cause = err
+      throw apiErr
+    } finally {
+      clearTimeout(timer)
     }
-
-    return json
   }
 }
