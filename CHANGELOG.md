@@ -7,7 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.0]
+## [1.2.0] - 2026-07-31
+
+### Added
+
+- `partnerId` configuration option: every API request now carries an
+  `X-Partner-Id` header identifying the integrator to the Symbiosis API
+  (default `'wdk'`; registered partners get higher rate limits).
+- `timeoutMs` configuration option: Symbiosis API requests now time out
+  (default 30 seconds). Timeouts and network failures are wrapped in
+  `ApiError` with `status: 0` instead of leaking raw fetch errors.
+
+### Changed
+
+- EVM approvals now reset a non-zero insufficient allowance to zero before
+  granting the new one, as required by tokens like USDT on Ethereum. Both
+  transactions are awaited until mined and reported in the result.
+- The partner (affiliate) fee share is now recognised by its fee description:
+  the Symbiosis API reports it under the `symbiosis` provider, so the previous
+  provider-based mapping could never produce an `affiliate` fee.
+- `fromTokenAmount` is validated as a positive integer amount and rejected
+  with a `ValidationError` otherwise.
+- Chain ids and transaction hashes are URL-encoded in status lookups.
+- Chains routed through third-party custodial integrations are excluded from
+  chain and token discovery and from chain resolution.
+
+### Removed
+
+- TON source-route execution: `ton` routes now throw `UnsupportedRouteError`
+  (quoting is unaffected). The WDK TON wallet account encodes string message
+  bodies as plain-text comments rather than the BoC cells Symbiosis routes
+  require, so the previous implementation could not execute the swap and
+  risked sending funds with an ineffective payload.
+
+## [1.1.2] - 2026-07-30
+
+### Changed
+
+- Publishing now runs on version tags and uses npm trusted publishing (OIDC).
+- Dependency security updates.
+
+## [1.1.1] - 2026-07-28
+
+_First published release of the 1.1 line (1.1.0 was not published to npm)._
 
 ### Added
 
@@ -36,31 +78,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of `action-required`: the state is non-terminal and Symbiosis resolves
   it automatically (completing or refunding), so no manual action is required.
 
-## [1.0.4]
+## [1.0.4] - 2026-06-24
 
 ### Changed
 
 - Replaced the "Built with WDK" logo asset.
 
-## [1.0.3]
+## 1.0.3 - 2026-06-24
 
 ### Changed
 
 - Minor documentation and packaging touch-ups.
 
-## [1.0.2]
+## 1.0.2 - 2026-06-24
 
 ### Changed
 
 - Packaging fixes for the public scoped release.
 
-## [1.0.1]
+## 1.0.1 - 2026-06-16
 
 ### Added
 
 - `repository` and `bugs` links in the package metadata.
 
-## [1.0.0]
+## [1.0.0] - 2026-06-16
 
 ### Added
 
@@ -71,10 +113,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   class. Supports EVM, TON and Bitcoin source-route execution; quote-only for
   Tron and Solana source routes.
 
-[Unreleased]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.0.4...v1.1.0
-[1.0.4]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.0.3...v1.0.4
-[1.0.3]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.0.2...v1.0.3
-[1.0.2]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.0.1...v1.0.2
-[1.0.1]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.0.0...v1.0.1
+[Unreleased]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.1.2...v1.2.0
+[1.1.2]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.0.4...v1.1.1
+[1.0.4]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.0.0...v1.0.4
 [1.0.0]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/releases/tag/v1.0.0
