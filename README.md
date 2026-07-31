@@ -136,7 +136,7 @@ Quoting works for every Symbiosis route. Execution through a bound WDK wallet ac
 |---|---|---|
 | EVM chains | `evm` | ✅ Approve (if needed) + calldata transaction via `WalletAccountEvm` / `WalletAccountEvmErc4337` |
 | Bitcoin | `btc` | ✅ Transfer to the generated deposit address via `WalletAccountBtc` (set `refundAddress`) |
-| TON | `ton` | ☑️ When `WalletAccountTon` supports raw BoC message bodies; quote-only otherwise |
+| TON | `ton` | ☑️ When the route is a single message and `WalletAccountTon` supports raw BoC message bodies; quote-only otherwise |
 | Tron | `tron` | ☑️ When `WalletAccountTron` supports smart contract calls and TRC-20 approvals; quote-only otherwise |
 | Solana | `solana` | ☑️ When `WalletAccountSolana` supports base64-serialized transactions; quote-only otherwise |
 

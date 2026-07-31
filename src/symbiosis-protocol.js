@@ -210,7 +210,9 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * The execution path depends on the route returned by Symbiosis:
    * - `evm` routes approve the input token (unless native or `skipApproval` is set) and send the calldata transaction.
    * - `btc` routes transfer the input amount to the generated Bitcoin deposit address.
-   * - `ton`, `tron` and `solana` source routes are not yet executable through WDK wallet accounts and throw.
+   * - `ton`, `tron` and `solana` routes are executed when the bound wallet account supports the
+   *   required capability (raw cell bodies for single-message `ton` routes, smart contract calls
+   *   and TRC-20 approvals for `tron`, serialized transactions for `solana`) and throw otherwise.
    *
    * @param {SwidgeOptions} options - The swidge options.
    * @param {SwidgeProtocolConfig} [config] - Optional execution configuration overriding the instance fee caps.
@@ -267,18 +269,20 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
       }
 
       case 'ton': {
-        if (!(await this._canExecuteTon(account))) {
+        // The TON wallet account reads a fresh seqno for every send and does not
+        // wait for inclusion, so sequential sends race on the seqno and at most
+        // one lands — a multi-message route could execute partially. Refuse it.
+        if (response.tx.messages.length !== 1 || !(await this._canExecuteTon(account))) {
           throw new UnsupportedRouteError(response.type)
         }
 
-        for (const message of response.tx.messages) {
-          const result = await account.sendTransaction({
-            to: message.address,
-            value: BigInt(message.amount),
-            body: message.payload
-          })
-          hash = result.hash
-        }
+        const [message] = response.tx.messages
+        const result = await account.sendTransaction({
+          to: message.address,
+          value: BigInt(message.amount),
+          body: message.payload
+        })
+        hash = result.hash
         break
       }
 
@@ -751,6 +755,12 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
       if (receipt) {
         if (receipt.status === 0 || receipt.status === 0n || receipt.status === false) {
           throw new TransactionError(`Transaction '${hash}' reverted.`, hash)
+        }
+        // Tron receipts (raw tronweb getTransactionInfo objects) have no `status`:
+        // failure is reported as `result: 'FAILED'` with the reason in `receipt.result`.
+        const tronResult = receipt.receipt?.result
+        if (receipt.result === 'FAILED' || (tronResult != null && tronResult !== 'SUCCESS')) {
+          throw new TransactionError(`Transaction '${hash}' reverted (${tronResult ?? 'FAILED'}).`, hash)
         }
         return receipt
       }
