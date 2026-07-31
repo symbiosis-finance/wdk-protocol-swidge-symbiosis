@@ -37,13 +37,26 @@ const DUMMY_BTC_REFUND_ADDRESS = 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh'
 const DUMMY_TON_ROUTER_ADDRESS = 'EQAvDfWFG0oYX19jwNDNBBL1rKNT9XfaGP9HyTb5nb2Eml6y'
 const DUMMY_TON_PAYLOAD = 'te6cckEBAQEAAgAAAEysuc0='
 const DUMMY_TON_MESSAGE_AMOUNT = '300000000'
+const TON_PROBE_BOC = 'te6cckEBAQEAAgAAAEysuc0='
+const TON_PROBE_ADDRESS = 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ'
+
+const USDT_TRON = '0xa614f803b6fd780986a42c78ec9c7f77e6ded13c'
+const DUMMY_TRON_ROUTER = 'TPuaJ6gnYfE9gLUDFrbWbPx3tMnjG8max1'
+const DUMMY_TRON_SELECTOR = 'metaRoute((bytes,bytes,address[],address,address,uint256,bool,address,bytes))'
+const DUMMY_TRON_RAW_PARAMETER = '0000000000000000000000000000000000000000000000000000000000000020'
+const DUMMY_TRON_TX_ID = '00c3473fec7876829fb623fb4ecb26dcb6b7e88cb5832384619bd6e5649eb44f'
+
+const USDC_SOLANA = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+const DUMMY_SOLANA_INSTRUCTIONS = 'AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+const DUMMY_SOLANA_TX_HASH = '5UfDuX1Kx3TDCnBZR1Xqd8QEkxouKikkNW8jSFAB1CkqbCPPKC8UUBNhcqp1zdRvKrqSMHZgV8KsAG5XLGQhGkWM'
 
 const DUMMY_CHAINS = [
   { id: 1, name: 'Ethereum', explorer: 'https://etherscan.io', icon: '', hasDepository: true },
   { id: 42161, name: 'Arbitrum One', explorer: 'https://arbiscan.io', icon: '', hasDepository: true },
   { id: 3652501241, name: 'Bitcoin', explorer: 'https://mempool.space', icon: '', hasDepository: false },
   { id: 85918, name: 'TON', explorer: 'https://tonviewer.com', icon: '', hasDepository: false },
-  { id: 728126428, name: 'Tron', explorer: 'https://tronscan.org', icon: '', hasDepository: false }
+  { id: 728126428, name: 'Tron', explorer: 'https://tronscan.org', icon: '', hasDepository: false },
+  { id: 5426, name: 'Solana', explorer: 'https://solscan.io', icon: '', hasDepository: false }
 ]
 
 const DUMMY_TOKENS = [
@@ -61,6 +74,18 @@ const DUMMY_TOKENS = [
     decimals: 6,
     priceUsd: 1,
     attributes: { ton: TON_USDT_ADDRESS }
+  },
+  { symbol: 'TRX', name: 'TRON', address: '', chainId: 728126428, decimals: 6, priceUsd: 0.3 },
+  { symbol: 'USDT', name: 'Tether USD', address: USDT_TRON, chainId: 728126428, decimals: 6, priceUsd: 1 },
+  { symbol: 'SOL', name: 'Solana', address: '', chainId: 5426, decimals: 9, priceUsd: 200 },
+  {
+    symbol: 'USDC',
+    name: 'USD Coin',
+    address: '0x0000000000000000000000000000000000000003',
+    chainId: 5426,
+    decimals: 6,
+    priceUsd: 1,
+    attributes: { solana: USDC_SOLANA }
   }
 ]
 
@@ -496,9 +521,125 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
       })
     })
 
-    test('should throw on a TON source route not executable through WDK accounts', async () => {
-      // The WDK TON wallet account encodes string bodies as text comments, not as
-      // the BoC cells Symbiosis routes require, so TON execution must refuse to run.
+    test('should execute a TON source route when the account supports raw cell bodies', async () => {
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        '/v2/swap': {
+          ...DUMMY_EVM_SWAP_RESPONSE,
+          type: 'ton',
+          tx: {
+            validUntil: 1780000000,
+            messages: [{ address: DUMMY_TON_ROUTER_ADDRESS, amount: DUMMY_TON_MESSAGE_AMOUNT, payload: DUMMY_TON_PAYLOAD }]
+          }
+        }
+      })
+
+      // An account that decodes the probe BoC string to the raw (empty) cell.
+      const tonAccount = {
+        getAddress: jest.fn(async () => SENDER),
+        sendTransaction: jest.fn(async () => ({ hash: DUMMY_SOURCE_TX_HASH })),
+        _getTransactionMessage: jest.fn(async () => ({ body: { bits: { length: 0 } } }))
+      }
+      const tonProtocol = new SymbiosisProtocol(tonAccount, { chain: 'TON' })
+
+      const result = await tonProtocol.swidge({
+        fromToken: TON_USDT_ADDRESS,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        recipient: SENDER,
+        fromTokenAmount: 1000000n
+      })
+
+      expect(tonAccount._getTransactionMessage).toHaveBeenCalledWith({
+        to: TON_PROBE_ADDRESS,
+        value: 0,
+        body: TON_PROBE_BOC
+      })
+      expect(tonAccount.sendTransaction).toHaveBeenCalledTimes(1)
+      expect(tonAccount.sendTransaction).toHaveBeenCalledWith({
+        to: DUMMY_TON_ROUTER_ADDRESS,
+        value: 300000000n,
+        body: DUMMY_TON_PAYLOAD
+      })
+      expect(result.id).toBe(`85918:${DUMMY_SOURCE_TX_HASH}`)
+    })
+
+    test('should refuse a multi-message TON source route even on a capable account', async () => {
+      // The TON wallet account reads a fresh seqno per send without waiting for
+      // inclusion: sequential sends race on the seqno, so a multi-message route
+      // could execute partially and must be refused.
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        '/v2/swap': {
+          ...DUMMY_EVM_SWAP_RESPONSE,
+          type: 'ton',
+          tx: {
+            validUntil: 1780000000,
+            messages: [
+              { address: DUMMY_TON_ROUTER_ADDRESS, amount: DUMMY_TON_MESSAGE_AMOUNT, payload: DUMMY_TON_PAYLOAD },
+              { address: DUMMY_TON_ROUTER_ADDRESS, amount: '50000000', payload: DUMMY_TON_PAYLOAD }
+            ]
+          }
+        }
+      })
+
+      const tonAccount = {
+        getAddress: jest.fn(async () => SENDER),
+        sendTransaction: jest.fn(),
+        _getTransactionMessage: jest.fn(async () => ({ body: { bits: { length: 0 } } }))
+      }
+      const tonProtocol = new SymbiosisProtocol(tonAccount, { chain: 'TON' })
+
+      await expect(tonProtocol.swidge({
+        fromToken: TON_USDT_ADDRESS,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        recipient: SENDER,
+        fromTokenAmount: 1000000n
+      })).rejects.toThrow(UnsupportedRouteError)
+
+      expect(tonAccount.sendTransaction).not.toHaveBeenCalled()
+    })
+
+    test('should refuse a TON source route when the account wraps string bodies into comments', async () => {
+      // Older wdk-wallet-ton versions encode string bodies as text comments, not as
+      // the BoC cells Symbiosis routes require: the capability probe must catch that
+      // and keep the route quote-only instead of corrupting the payload.
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        '/v2/swap': {
+          ...DUMMY_EVM_SWAP_RESPONSE,
+          type: 'ton',
+          tx: {
+            validUntil: 1780000000,
+            messages: [{ address: DUMMY_TON_ROUTER_ADDRESS, amount: DUMMY_TON_MESSAGE_AMOUNT, payload: DUMMY_TON_PAYLOAD }]
+          }
+        }
+      })
+
+      // A comment cell starts with a 32-bit zero opcode followed by the text.
+      const legacyTonAccount = {
+        getAddress: jest.fn(async () => SENDER),
+        sendTransaction: jest.fn(),
+        _getTransactionMessage: jest.fn(async () => ({ body: { bits: { length: 224 } } }))
+      }
+      const tonProtocol = new SymbiosisProtocol(legacyTonAccount, { chain: 'TON' })
+
+      await expect(tonProtocol.swidge({
+        fromToken: TON_USDT_ADDRESS,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        recipient: SENDER,
+        fromTokenAmount: 1000000n
+      })).rejects.toThrow(UnsupportedRouteError)
+
+      expect(legacyTonAccount.sendTransaction).not.toHaveBeenCalled()
+    })
+
+    test('should refuse a TON source route on an account without message building', async () => {
       global.fetch = mockFetch({
         '/v1/chains': DUMMY_CHAINS,
         '/v2/tokens': DUMMY_TOKENS,
@@ -524,7 +665,163 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
       expect(account.sendTransaction).not.toHaveBeenCalled()
     })
 
-    test('should throw on a Tron source route not executable through WDK accounts', async () => {
+    test('should execute a Tron source route with approval when the account supports contract calls', async () => {
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        '/v2/swap': {
+          ...DUMMY_EVM_SWAP_RESPONSE,
+          type: 'tron',
+          approveTo: DUMMY_TRON_ROUTER,
+          tx: {
+            chainId: 728126428,
+            to: DUMMY_TRON_ROUTER,
+            functionSelector: DUMMY_TRON_SELECTOR,
+            data: DUMMY_TRON_RAW_PARAMETER,
+            feeLimit: 200000000,
+            from: SENDER
+          }
+        }
+      })
+
+      // Smart contract call support is detected through the wallet class marker.
+      // Tron receipts are raw tronweb getTransactionInfo objects (no `status`).
+      const tronAccount = {
+        constructor: { _isSmartContractCall: () => true },
+        getAddress: jest.fn(async () => SENDER),
+        getAllowance: jest.fn(async () => 0n),
+        approve: jest.fn(async () => ({ hash: DUMMY_APPROVE_TX_HASH })),
+        getTransactionReceipt: jest.fn(async () => ({ id: DUMMY_APPROVE_TX_HASH, receipt: { result: 'SUCCESS' } })),
+        sendTransaction: jest.fn(async () => ({ hash: DUMMY_TRON_TX_ID }))
+      }
+      const tronProtocol = new SymbiosisProtocol(tronAccount, { chain: 'Tron' })
+
+      const result = await tronProtocol.swidge({
+        fromToken: USDT_TRON,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        recipient: SENDER,
+        fromTokenAmount: 10000000n
+      })
+
+      // Symbiosis lists Tron tokens as EVM-style hex: the approval must target
+      // the Tron hex form (0x41-prefixed) of the same address.
+      expect(tronAccount.approve).toHaveBeenCalledWith({
+        token: '41' + USDT_TRON.slice(2),
+        spender: DUMMY_TRON_ROUTER,
+        amount: 10000000n
+      })
+      expect(tronAccount.sendTransaction).toHaveBeenCalledWith({
+        contractAddress: DUMMY_TRON_ROUTER,
+        functionSelector: DUMMY_TRON_SELECTOR,
+        options: {
+          rawParameter: DUMMY_TRON_RAW_PARAMETER,
+          callValue: 0,
+          feeLimit: 200000000
+        }
+      })
+      expect(result.id).toBe(`728126428:${DUMMY_TRON_TX_ID}`)
+      expect(result.transactions).toEqual([
+        { hash: DUMMY_APPROVE_TX_HASH, chain: 728126428, type: 'approval' },
+        { hash: DUMMY_TRON_TX_ID, chain: 728126428, type: 'source' }
+      ])
+    })
+
+    test('should throw and skip the swap when a Tron approval fails on-chain', async () => {
+      // A failed Tron contract call still produces a receipt: tronweb reports it
+      // as result 'FAILED' with the reason in receipt.result, never via `status`.
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        '/v2/swap': {
+          ...DUMMY_EVM_SWAP_RESPONSE,
+          type: 'tron',
+          approveTo: DUMMY_TRON_ROUTER,
+          tx: {
+            chainId: 728126428,
+            to: DUMMY_TRON_ROUTER,
+            functionSelector: DUMMY_TRON_SELECTOR,
+            data: DUMMY_TRON_RAW_PARAMETER,
+            feeLimit: 200000000,
+            from: SENDER
+          }
+        }
+      })
+
+      const tronAccount = {
+        constructor: { _isSmartContractCall: () => true },
+        getAddress: jest.fn(async () => SENDER),
+        getAllowance: jest.fn(async () => 0n),
+        approve: jest.fn(async () => ({ hash: DUMMY_APPROVE_TX_HASH })),
+        getTransactionReceipt: jest.fn(async () => ({
+          id: DUMMY_APPROVE_TX_HASH,
+          result: 'FAILED',
+          receipt: { result: 'OUT_OF_ENERGY' }
+        })),
+        sendTransaction: jest.fn()
+      }
+      const tronProtocol = new SymbiosisProtocol(tronAccount, { chain: 'Tron' })
+
+      await expect(tronProtocol.swidge({
+        fromToken: USDT_TRON,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        recipient: SENDER,
+        fromTokenAmount: 10000000n
+      })).rejects.toThrow("Transaction '" + DUMMY_APPROVE_TX_HASH + "' reverted (OUT_OF_ENERGY).")
+
+      expect(tronAccount.sendTransaction).not.toHaveBeenCalled()
+    })
+
+    test('should execute a native TRX route without requiring approval support', async () => {
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        '/v2/swap': {
+          ...DUMMY_EVM_SWAP_RESPONSE,
+          type: 'tron',
+          approveTo: DUMMY_TRON_ROUTER,
+          tx: {
+            chainId: 728126428,
+            to: DUMMY_TRON_ROUTER,
+            functionSelector: DUMMY_TRON_SELECTOR,
+            data: DUMMY_TRON_RAW_PARAMETER,
+            value: '100000000',
+            feeLimit: 200000000,
+            from: SENDER
+          }
+        }
+      })
+
+      // No approve capability: fine for a native TRX input.
+      const tronAccount = {
+        constructor: { _isSmartContractCall: () => true },
+        getAddress: jest.fn(async () => SENDER),
+        sendTransaction: jest.fn(async () => ({ hash: DUMMY_TRON_TX_ID }))
+      }
+      const tronProtocol = new SymbiosisProtocol(tronAccount, { chain: 'Tron' })
+
+      const result = await tronProtocol.swidge({
+        fromToken: 'native',
+        toToken: USDC_ARB,
+        toChain: 42161,
+        recipient: SENDER,
+        fromTokenAmount: 100000000n
+      })
+
+      expect(tronAccount.sendTransaction).toHaveBeenCalledWith({
+        contractAddress: DUMMY_TRON_ROUTER,
+        functionSelector: DUMMY_TRON_SELECTOR,
+        options: {
+          rawParameter: DUMMY_TRON_RAW_PARAMETER,
+          callValue: 100000000,
+          feeLimit: 200000000
+        }
+      })
+      expect(result.id).toBe(`728126428:${DUMMY_TRON_TX_ID}`)
+    })
+
+    test('should refuse a Tron source route on an account without contract call support', async () => {
       global.fetch = mockFetch({
         '/v1/chains': DUMMY_CHAINS,
         '/v2/tokens': DUMMY_TOKENS,
@@ -537,6 +834,33 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
         toChain: 42161,
         fromTokenAmount: 100000000n
       })).rejects.toThrow(UnsupportedRouteError)
+
+      expect(account.sendTransaction).not.toHaveBeenCalled()
+    })
+
+    test('should refuse a Tron token route when the account cannot approve', async () => {
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        '/v2/swap': { ...DUMMY_EVM_SWAP_RESPONSE, type: 'tron' }
+      })
+
+      const tronAccount = {
+        constructor: { _isSmartContractCall: () => true },
+        getAddress: jest.fn(async () => SENDER),
+        sendTransaction: jest.fn(async () => ({ hash: DUMMY_TRON_TX_ID }))
+      }
+      const tronProtocol = new SymbiosisProtocol(tronAccount, { chain: 'Tron' })
+
+      await expect(tronProtocol.swidge({
+        fromToken: USDT_TRON,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        recipient: SENDER,
+        fromTokenAmount: 10000000n
+      })).rejects.toThrow(UnsupportedRouteError)
+
+      expect(tronAccount.sendTransaction).not.toHaveBeenCalled()
     })
 
     test('should throw ReadOnlyAccountError when the account cannot approve an EVM route', async () => {
@@ -579,7 +903,39 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
       expect(result.id).toBe(`1:${DUMMY_SOURCE_TX_HASH}`)
     })
 
-    test('should throw on a Solana source route not executable through WDK accounts', async () => {
+    test('should execute a Solana source route when the account signs serialized transactions', async () => {
+      global.fetch = mockFetch({
+        '/v1/chains': DUMMY_CHAINS,
+        '/v2/tokens': DUMMY_TOKENS,
+        '/v2/swap': {
+          ...DUMMY_EVM_SWAP_RESPONSE,
+          type: 'solana',
+          tx: { instructions: DUMMY_SOLANA_INSTRUCTIONS }
+        }
+      })
+
+      const solanaAccount = {
+        getAddress: jest.fn(async () => SENDER),
+        sendTransaction: jest.fn(async () => ({ hash: DUMMY_SOLANA_TX_HASH })),
+        _signSerializedTransaction: jest.fn()
+      }
+      const solanaProtocol = new SymbiosisProtocol(solanaAccount, { chain: 'Solana' })
+
+      const result = await solanaProtocol.swidge({
+        fromToken: USDC_SOLANA,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        recipient: SENDER,
+        fromTokenAmount: 10000000n
+      })
+
+      // The serialized transaction is passed through as-is: the account decodes,
+      // signs and broadcasts it.
+      expect(solanaAccount.sendTransaction).toHaveBeenCalledWith(DUMMY_SOLANA_INSTRUCTIONS)
+      expect(result.id).toBe(`5426:${DUMMY_SOLANA_TX_HASH}`)
+    })
+
+    test('should refuse a Solana source route on an account without serialized transaction support', async () => {
       global.fetch = mockFetch({
         '/v1/chains': DUMMY_CHAINS,
         '/v2/tokens': DUMMY_TOKENS,
@@ -592,6 +948,8 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
         toChain: 42161,
         fromTokenAmount: 100000000n
       })).rejects.toThrow(UnsupportedRouteError)
+
+      expect(account.sendTransaction).not.toHaveBeenCalled()
     })
 
     test('should throw if the swidge fees exceed the max protocol fee configuration', async () => {
@@ -948,7 +1306,8 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
         { id: 42161, name: 'Arbitrum One', type: 'evm', nativeToken: '' },
         { id: 3652501241, name: 'Bitcoin', type: 'utxo', nativeToken: 'BTC' },
         { id: 85918, name: 'TON', type: 'tvm', nativeToken: 'TON' },
-        { id: 728126428, name: 'Tron', type: 'tron', nativeToken: '' }
+        { id: 728126428, name: 'Tron', type: 'tron', nativeToken: 'TRX' },
+        { id: 5426, name: 'Solana', type: 'svm', nativeToken: 'SOL' }
       ])
     })
   })

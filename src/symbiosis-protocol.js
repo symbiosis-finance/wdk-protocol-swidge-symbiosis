@@ -105,6 +105,12 @@ const PARTNER_FEE_DESCRIPTION = 'Partner fee'
 // this module: they are filtered out of discovery, quoting and status resolution.
 const EXCLUDED_CHAIN_NAMES = new Set(['monero', 'zcash'])
 
+// Offline probe for TON raw-body support: a base64-serialized empty cell and a
+// syntactically valid address. A capable wallet account decodes the body to the
+// empty cell (0 bits); an older one wraps the string into a text comment.
+const TON_PROBE_BOC = 'te6cckEBAQEAAgAAAEysuc0='
+const TON_PROBE_ADDRESS = 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ'
+
 const STATUS_BY_CODE = {
   // -1 (not found): the source transaction may not be indexed yet
   '-1': 'pending',
@@ -204,7 +210,9 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * The execution path depends on the route returned by Symbiosis:
    * - `evm` routes approve the input token (unless native or `skipApproval` is set) and send the calldata transaction.
    * - `btc` routes transfer the input amount to the generated Bitcoin deposit address.
-   * - `ton`, `tron` and `solana` source routes are not yet executable through WDK wallet accounts and throw.
+   * - `ton`, `tron` and `solana` routes are executed when the bound wallet account supports the
+   *   required capability (raw cell bodies for single-message `ton` routes, smart contract calls
+   *   and TRC-20 approvals for `tron`, serialized transactions for `solana`) and throw otherwise.
    *
    * @param {SwidgeOptions} options - The swidge options.
    * @param {SwidgeProtocolConfig} [config] - Optional execution configuration overriding the instance fee caps.
@@ -212,7 +220,10 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
    * @throws {ReadOnlyAccountError} If no account, a read-only account, or an account lacking a required
    *   capability was given at construction.
    * @throws {FeeLimitExceededError} If a configured fee cap is exceeded.
-   * @throws {UnsupportedRouteError} If the route type cannot be executed by the bound wallet account.
+   * @throws {UnsupportedRouteError} If the bound wallet account cannot execute the route — either the
+   *   route type is unknown, or the account's wdk-wallet version lacks a capability the route requires
+   *   (raw cell bodies for `ton`, smart contract calls and TRC-20 approvals for `tron`, serialized
+   *   transactions for `solana`).
    * @throws {TransactionError} If a transaction submitted during execution reverts or times out.
    */
   async swidge (options, config) {
@@ -253,6 +264,61 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
           to: response.tx.depositAddress,
           value: amount
         })
+        hash = result.hash
+        break
+      }
+
+      case 'ton': {
+        // The TON wallet account reads a fresh seqno for every send and does not
+        // wait for inclusion, so sequential sends race on the seqno and at most
+        // one lands — a multi-message route could execute partially. Refuse it.
+        if (response.tx.messages.length !== 1 || !(await this._canExecuteTon(account))) {
+          throw new UnsupportedRouteError(response.type)
+        }
+
+        const [message] = response.tx.messages
+        const result = await account.sendTransaction({
+          to: message.address,
+          value: BigInt(message.amount),
+          body: message.payload
+        })
+        hash = result.hash
+        break
+      }
+
+      case 'tron': {
+        const isNative = body.tokenAmountIn.address === ''
+        const needsApproval = !isNative && !this._config.skipApproval
+        if (!this._canExecuteTron(account, needsApproval)) {
+          throw new UnsupportedRouteError(response.type)
+        }
+
+        if (needsApproval) {
+          // Symbiosis lists Tron token addresses in the EVM hex form; the Tron
+          // hex form the wallet expects carries a 0x41 prefix instead of 0x.
+          const token = '41' + body.tokenAmountIn.address.slice(2)
+          await this._ensureAllowance(account, token, response.approveTo, amount, srcChainId, transactions)
+        }
+
+        const result = await account.sendTransaction({
+          contractAddress: response.tx.to,
+          functionSelector: response.tx.functionSelector,
+          options: {
+            rawParameter: response.tx.data,
+            callValue: Number(response.tx.value ?? 0),
+            feeLimit: response.tx.feeLimit
+          }
+        })
+        hash = result.hash
+        break
+      }
+
+      case 'solana': {
+        if (!this._canExecuteSolana(account)) {
+          throw new UnsupportedRouteError(response.type)
+        }
+
+        const result = await account.sendTransaction(response.tx.instructions)
         hash = result.hash
         break
       }
@@ -615,6 +681,61 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
   }
 
   /**
+   * Determines whether the bound TON wallet account can execute Symbiosis route
+   * payloads, which are base64-serialized cells (BoC). Older `wdk-wallet-ton`
+   * versions send every string body as a text comment, which would silently
+   * corrupt the payload — so the probe builds a throwaway message offline and
+   * checks that the body decodes to the empty probe cell instead of a comment.
+   *
+   * @protected
+   * @param {IWalletAccount} account - The bound wallet account.
+   * @returns {Promise<boolean>} True if raw cell bodies are supported.
+   */
+  async _canExecuteTon (account) {
+    if (typeof account._getTransactionMessage !== 'function') return false
+
+    try {
+      const message = await account._getTransactionMessage({
+        to: TON_PROBE_ADDRESS,
+        value: 0,
+        body: TON_PROBE_BOC
+      })
+
+      return message?.body?.bits?.length === 0
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Determines whether the bound Tron wallet account can execute Symbiosis routes:
+   * smart contract calls require `wdk-wallet-tron` >= 1.0.0-beta.9, and TRC-20
+   * inputs additionally need the `approve` capability.
+   *
+   * @protected
+   * @param {IWalletAccount} account - The bound wallet account.
+   * @param {boolean} needsApproval - Whether the route spends a TRC-20 token that must be approved.
+   * @returns {boolean} True if the account can execute the route.
+   */
+  _canExecuteTron (account, needsApproval) {
+    if (typeof account.constructor?._isSmartContractCall !== 'function') return false
+
+    return !needsApproval || typeof account.approve === 'function'
+  }
+
+  /**
+   * Determines whether the bound Solana wallet account can execute Symbiosis route
+   * payloads, which are base64-encoded serialized transactions.
+   *
+   * @protected
+   * @param {IWalletAccount} account - The bound wallet account.
+   * @returns {boolean} True if serialized transactions are supported.
+   */
+  _canExecuteSolana (account) {
+    return typeof account._signSerializedTransaction === 'function'
+  }
+
+  /**
    * Waits for a transaction to be mined by polling the wallet account for its receipt.
    *
    * @protected
@@ -634,6 +755,12 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
       if (receipt) {
         if (receipt.status === 0 || receipt.status === 0n || receipt.status === false) {
           throw new TransactionError(`Transaction '${hash}' reverted.`, hash)
+        }
+        // Tron receipts (raw tronweb getTransactionInfo objects) have no `status`:
+        // failure is reported as `result: 'FAILED'` with the reason in `receipt.result`.
+        const tronResult = receipt.receipt?.result
+        if (receipt.result === 'FAILED' || (tronResult != null && tronResult !== 'SUCCESS')) {
+          throw new TransactionError(`Transaction '${hash}' reverted (${tronResult ?? 'FAILED'}).`, hash)
         }
         return receipt
       }

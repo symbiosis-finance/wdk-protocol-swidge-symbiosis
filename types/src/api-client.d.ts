@@ -88,10 +88,23 @@ export const DEFAULT_PARTNER_ID: "wdk";
  * @property {string} depositAddress - The generated Bitcoin deposit address to transfer the input amount to.
  */
 /**
+ * @typedef {Object} SymbiosisTronTx
+ * @property {string} to - The router contract address, in base58.
+ * @property {string} functionSelector - The signature of the contract function to call.
+ * @property {string} data - The raw ABI-encoded call parameters, in hex.
+ * @property {string} [value] - The TRX call value to attach, in SUN, as a decimal string.
+ * @property {number} feeLimit - The maximum fee for the call, in SUN.
+ * @property {string} from - The sender address.
+ */
+/**
+ * @typedef {Object} SymbiosisSolanaTx
+ * @property {string} instructions - The base64-encoded serialized transaction to sign and broadcast.
+ */
+/**
  * @typedef {Object} SymbiosisSwapResponse
  * @property {string} type - The route type: `'evm'`, `'ton'`, `'btc'`, `'tron'` or `'solana'`.
- * @property {SymbiosisEvmTx | SymbiosisTonTx | SymbiosisBtcTx} tx - The route transaction payload; its shape depends on `type`.
- * @property {string} [approveTo] - The spender to grant the ERC-20 allowance to, for `evm` routes.
+ * @property {SymbiosisEvmTx | SymbiosisTonTx | SymbiosisBtcTx | SymbiosisTronTx | SymbiosisSolanaTx} tx - The route transaction payload; its shape depends on `type`.
+ * @property {string} [approveTo] - The spender to grant the token allowance to, for `evm` and `tron` routes.
  * @property {SymbiosisFeeEntry[]} [fees] - The fees applied to the route.
  * @property {SymbiosisTokenAmount} tokenAmountOut - The estimated output amount.
  * @property {SymbiosisTokenAmount} tokenAmountOutMin - The minimum output amount after slippage.
@@ -394,6 +407,38 @@ export type SymbiosisBtcTx = {
      */
     depositAddress: string;
 };
+export type SymbiosisTronTx = {
+    /**
+     * - The router contract address, in base58.
+     */
+    to: string;
+    /**
+     * - The signature of the contract function to call.
+     */
+    functionSelector: string;
+    /**
+     * - The raw ABI-encoded call parameters, in hex.
+     */
+    data: string;
+    /**
+     * - The TRX call value to attach, in SUN, as a decimal string.
+     */
+    value?: string;
+    /**
+     * - The maximum fee for the call, in SUN.
+     */
+    feeLimit: number;
+    /**
+     * - The sender address.
+     */
+    from: string;
+};
+export type SymbiosisSolanaTx = {
+    /**
+     * - The base64-encoded serialized transaction to sign and broadcast.
+     */
+    instructions: string;
+};
 export type SymbiosisSwapResponse = {
     /**
      * - The route type: `'evm'`, `'ton'`, `'btc'`, `'tron'` or `'solana'`.
@@ -402,9 +447,9 @@ export type SymbiosisSwapResponse = {
     /**
      * - The route transaction payload; its shape depends on `type`.
      */
-    tx: SymbiosisEvmTx | SymbiosisTonTx | SymbiosisBtcTx;
+    tx: SymbiosisEvmTx | SymbiosisTonTx | SymbiosisBtcTx | SymbiosisTronTx | SymbiosisSolanaTx;
     /**
-     * - The spender to grant the ERC-20 allowance to, for `evm` routes.
+     * - The spender to grant the token allowance to, for `evm` and `tron` routes.
      */
     approveTo?: string;
     /**

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- TON, Tron and Solana source routes are now executed when the bound WDK
+  wallet account supports them, detected by probing the account at execution
+  time: raw BoC message bodies for TON, smart contract calls plus TRC-20
+  approvals for Tron, and base64-serialized transactions for Solana. On older
+  wallet versions these routes keep throwing `UnsupportedRouteError`
+  (quote-only), exactly as before. TON routes are limited to single-message
+  transactions (the TON wallet cannot chain sends safely); Tron approval
+  receipts are checked for on-chain failure (`result`/`receipt.result`)
+  before the swap is sent.
+- `examples/swidge.js`: an end-to-end example that quotes and executes a route
+  from an EVM source chain to any supported destination and tracks the
+  settlement. Takes `chain:token` pairs and a human-readable amount; quote-only
+  unless `EXECUTE=1`.
+
 ## [1.2.0] - 2026-07-31
 
 ### Added
