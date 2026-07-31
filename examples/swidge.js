@@ -6,7 +6,7 @@
 //
 //   SEED     BIP-39 seed phrase of the wallet.
 //   RPC_URL  Source chain RPC endpoint (required with EXECUTE=1).
-//   EXECUTE  Set to 1 to send the transactions; omitted = quote only, nothing is signed.
+//   EXECUTE  Set to exactly 1 to send the transactions; anything else = quote only, nothing is signed.
 //
 //   Chains are Symbiosis names or numeric ids (see getSupportedChains()), tokens
 //   are symbols or addresses (see getSupportedTokens()), the amount is human-readable.
@@ -68,8 +68,8 @@ async function main () {
   console.log('  minimum out  :', fromBaseUnits(quote.toTokenAmountMin, toToken.decimals), toToken.symbol)
   for (const fee of quote.fees) console.log(`  fee          : ${fee.amount} (${fee.type}) — ${fee.description}`)
 
-  if (!process.env.EXECUTE) {
-    console.log('\nEXECUTE not set — stopping after quote.')
+  if (process.env.EXECUTE !== '1') {
+    console.log('\nEXECUTE is not 1 — stopping after quote.')
     return
   }
 
