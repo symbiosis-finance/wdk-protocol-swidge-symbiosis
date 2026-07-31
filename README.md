@@ -126,9 +126,11 @@ Quoting works for every Symbiosis route. Execution through a bound WDK wallet ac
 |---|---|---|
 | EVM chains | `evm` | ✅ Approve (if needed) + calldata transaction via `WalletAccountEvm` / `WalletAccountEvmErc4337` |
 | Bitcoin | `btc` | ✅ Transfer to the generated deposit address via `WalletAccountBtc` (set `refundAddress`) |
-| TON | `ton` | ⚠️ Quote only — the WDK TON wallet account does not accept the raw BoC message payloads Symbiosis routes require yet |
-| Tron | `tron` | ⚠️ Quote only — the WDK Tron wallet account does not expose smart-contract calls yet |
-| Solana | `solana` | ⚠️ Quote only — the WDK Solana wallet account does not accept serialized route transactions yet |
+| TON | `ton` | ☑️ When `WalletAccountTon` supports raw BoC message bodies; quote-only otherwise |
+| Tron | `tron` | ☑️ When `WalletAccountTron` supports smart contract calls and TRC-20 approvals; quote-only otherwise |
+| Solana | `solana` | ☑️ When `WalletAccountSolana` supports base64-serialized transactions; quote-only otherwise |
+
+For TON, Tron and Solana the module probes the bound wallet account at execution time: if the installed `wdk-wallet-*` version provides the capability the route requires, the route is executed like any other; if not, `swidge()` throws `UnsupportedRouteError` and the route stays quote-only. No configuration is needed — upgrading the wallet package enables execution automatically.
 
 Any chain can be used as the **destination** regardless of this table.
 
@@ -199,7 +201,7 @@ try {
 | `UnsupportedChainError` | `SymbiosisError` | A chain identifier cannot be resolved to a Symbiosis-supported chain. Carries `.identifier`. |
 | `UnsupportedTokenError` | `SymbiosisError` | A token identifier is not in the Symbiosis token list for the chain. Carries `.identifier`. |
 | `ReadOnlyAccountError` | `SymbiosisError` | Execution is attempted without a signing account, with a read-only account, or with an account lacking a required capability (e.g. ERC-20 approvals). |
-| `UnsupportedRouteError` | `SymbiosisError` | The route type returned by Symbiosis (`ton`/`tron`/`solana`) cannot be executed through the bound WDK account. Carries `.type`. |
+| `UnsupportedRouteError` | `SymbiosisError` | The bound WDK account cannot execute the route returned by Symbiosis (a `ton`/`tron`/`solana` route on a wallet version without the required capability). Carries `.type`. |
 | `FeeLimitExceededError` | `SymbiosisError` | The quoted network/protocol fee exceeds the configured `maxNetworkFeeBps`/`maxProtocolFeeBps`. Carries `.feeType`, `.bps`, `.cap`. |
 | `TransactionError` | `SymbiosisError` | A transaction submitted during execution reverts, or its receipt does not appear before the timeout. Carries `.hash`. |
 | `ApiError` | `SymbiosisError` | The Symbiosis REST API returned a non-2xx response, or the request failed or timed out before a response was received (`.status` is `0`). Carries `.status` and the parsed `.response`. |

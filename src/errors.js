@@ -141,7 +141,10 @@ export class ReadOnlyAccountError extends SymbiosisError {
 
 /**
  * Thrown when the route type returned by Symbiosis cannot be executed through the
- * bound WDK wallet account (currently `ton`, `tron` and `solana` source routes).
+ * bound WDK wallet account. `ton`, `tron` and `solana` routes are executed when the
+ * account supports the required capability (raw cell bodies, smart contract calls
+ * with TRC-20 approvals, serialized transactions respectively) and are quote-only
+ * otherwise.
  */
 export class UnsupportedRouteError extends SymbiosisError {
   /**

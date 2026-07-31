@@ -112,6 +112,38 @@ export default class SymbiosisProtocol extends SwidgeProtocol {
      */
     protected _ensureAllowance(account: IWalletAccount, token: string, spender: string, amount: bigint, chain: string | number, transactions: SwidgeTransaction[]): Promise<void>;
     /**
+     * Determines whether the bound TON wallet account can execute Symbiosis route
+     * payloads, which are base64-serialized cells (BoC). Older `wdk-wallet-ton`
+     * versions send every string body as a text comment, which would silently
+     * corrupt the payload — so the probe builds a throwaway message offline and
+     * checks that the body decodes to the empty probe cell instead of a comment.
+     *
+     * @protected
+     * @param {IWalletAccount} account - The bound wallet account.
+     * @returns {Promise<boolean>} True if raw cell bodies are supported.
+     */
+    protected _canExecuteTon(account: IWalletAccount): Promise<boolean>;
+    /**
+     * Determines whether the bound Tron wallet account can execute Symbiosis routes:
+     * smart contract calls require `wdk-wallet-tron` >= 1.0.0-beta.9, and TRC-20
+     * inputs additionally need the `approve` capability.
+     *
+     * @protected
+     * @param {IWalletAccount} account - The bound wallet account.
+     * @param {boolean} needsApproval - Whether the route spends a TRC-20 token that must be approved.
+     * @returns {boolean} True if the account can execute the route.
+     */
+    protected _canExecuteTron(account: IWalletAccount, needsApproval: boolean): boolean;
+    /**
+     * Determines whether the bound Solana wallet account can execute Symbiosis route
+     * payloads, which are base64-encoded serialized transactions.
+     *
+     * @protected
+     * @param {IWalletAccount} account - The bound wallet account.
+     * @returns {boolean} True if serialized transactions are supported.
+     */
+    protected _canExecuteSolana(account: IWalletAccount): boolean;
+    /**
      * Waits for a transaction to be mined by polling the wallet account for its receipt.
      *
      * @protected
