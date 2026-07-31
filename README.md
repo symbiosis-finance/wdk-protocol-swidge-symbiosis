@@ -96,6 +96,16 @@ const quote = await symbiosis.quoteSwidge({
 })
 ```
 
+### Full example
+
+[`examples/swidge.js`](examples/swidge.js) is an end-to-end script (resolve → quote → execute → track settlement) verified against mainnet. It takes the source and destination as `chain:token` pairs (chain name or id, token symbol or address) and a human-readable amount. It is safe by default — without `EXECUTE=1` it stops after the quote:
+
+```bash
+SEED="word word ..." node examples/swidge.js "Arbitrum One:USDC" Base:USDC 2          # quote only
+SEED="word word ..." RPC_URL=https://arb1.arbitrum.io/rpc EXECUTE=1 \
+  node examples/swidge.js "Arbitrum One:USDC" Base:USDC 2                             # real execution
+```
+
 ## Configuration
 
 ```javascript

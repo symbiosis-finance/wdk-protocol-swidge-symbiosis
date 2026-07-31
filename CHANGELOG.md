@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   approvals for Tron, and base64-serialized transactions for Solana. On older
   wallet versions these routes keep throwing `UnsupportedRouteError`
   (quote-only), exactly as before.
+- `examples/swidge.js`: an end-to-end example that quotes and executes a route
+  from an EVM source chain to any supported destination and tracks the
+  settlement. Takes `chain:token` pairs and a human-readable amount; quote-only
+  unless `EXECUTE=1`.
 
 ## [1.2.0] - 2026-07-31
 
