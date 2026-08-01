@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-08-01
 
 ### Added
 
@@ -129,7 +129,7 @@ _First published release of the 1.1 line (1.1.0 was not published to npm)._
   class. Supports EVM, TON and Bitcoin source-route execution; quote-only for
   Tron and Solana source routes.
 
-[Unreleased]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.2.0...HEAD
+[1.3.0]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.0.4...v1.1.1

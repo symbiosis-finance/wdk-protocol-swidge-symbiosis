@@ -1,6 +1,6 @@
 {
   "name": "@symbiosis-finance/wdk-protocol-swidge-symbiosis",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "WDK swidge protocol module for any-to-any cross-chain swaps and bridging via the Symbiosis protocol.",
   "keywords": [
     "wdk",
