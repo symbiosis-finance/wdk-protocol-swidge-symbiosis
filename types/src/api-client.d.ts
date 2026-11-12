@@ -1,12 +1,12 @@
 export const DEFAULT_API_URL: "https://api.symbiosis.finance/crosschain";
 export const DEFAULT_TIMEOUT_MS: 30000;
-export const DEFAULT_PARTNER_ID: "wdk";
 /**
  * @typedef {Object} SymbiosisApiClientConfig
  * @property {string} [apiUrl] - The base URL of the Symbiosis API (defaults to {@link DEFAULT_API_URL}).
  * @property {number} [timeoutMs] - The request timeout in milliseconds (defaults to {@link DEFAULT_TIMEOUT_MS}).
- * @property {string} [partnerId] - The `X-Partner-Id` header value identifying the integrator to the
- *   Symbiosis API (defaults to {@link DEFAULT_PARTNER_ID}; pass `''` to omit the header).
+ * @property {string} [apiKey] - The Symbiosis partner API key, sent as the `X-Api-Key` header with every
+ *   request. It identifies your partner ID and gives your partner rate limit; without it requests are
+ *   limited per client IP at the default rate, and quotes and swaps may be refused.
  */
 /**
  * @typedef {Object} SymbiosisChain
@@ -141,10 +141,10 @@ export default class SymbiosisApiClient {
      *
      * @param {SymbiosisApiClientConfig} [config] - The client configuration.
      */
-    constructor({ apiUrl, timeoutMs, partnerId }?: SymbiosisApiClientConfig);
+    constructor({ apiUrl, timeoutMs, apiKey }?: SymbiosisApiClientConfig);
     _apiUrl: string;
     _timeoutMs: number;
-    _partnerId: string;
+    _apiKey: string;
     /**
      * Lists the chains supported by the Symbiosis protocol.
      *
@@ -205,10 +205,11 @@ export type SymbiosisApiClientConfig = {
      */
     timeoutMs?: number;
     /**
-     * - The `X-Partner-Id` header value identifying the integrator to the
-     * Symbiosis API (defaults to {@link DEFAULT_PARTNER_ID}; pass `''` to omit the header).
+     * - The Symbiosis partner API key, sent as the `X-Api-Key` header with every
+     * request. It identifies your partner ID and gives your partner rate limit; without it requests are
+     * limited per client IP at the default rate, and quotes and swaps may be refused.
      */
-    partnerId?: string;
+    apiKey?: string;
 };
 export type SymbiosisChain = {
     /**

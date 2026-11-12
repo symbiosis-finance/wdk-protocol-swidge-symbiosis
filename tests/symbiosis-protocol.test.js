@@ -1241,21 +1241,28 @@ describe('@symbiosis-finance/wdk-protocol-swidge-symbiosis', () => {
   })
 
   describe('api client', () => {
-    test('should send the default X-Partner-Id header', async () => {
+    test('should send no partner headers without an API key', async () => {
       await protocol.getSupportedChains()
 
       const [, init] = global.fetch.mock.calls[0]
-      expect(init.headers['X-Partner-Id']).toBe('wdk')
+      expect(init.headers).not.toHaveProperty('X-Api-Key')
+      expect(init.headers).not.toHaveProperty('X-Partner-Id')
     })
 
-    test('should allow overriding and omitting the X-Partner-Id header', async () => {
-      const custom = new SymbiosisProtocol(account, { chain: 'Ethereum', partnerId: 'my-app' })
-      await custom.getSupportedChains()
-      expect(global.fetch.mock.calls.at(-1)[1].headers['X-Partner-Id']).toBe('my-app')
+    test('should send the configured API key as X-Api-Key with every request', async () => {
+      const keyed = new SymbiosisProtocol(account, { chain: 'Ethereum', apiKey: 'test-key' })
+      await keyed.getSupportedChains()
+      expect(global.fetch.mock.calls.at(-1)[1].headers['X-Api-Key']).toBe('test-key')
 
-      const anonymous = new SymbiosisProtocol(account, { chain: 'Ethereum', partnerId: '' })
-      await anonymous.getSupportedChains()
-      expect(global.fetch.mock.calls.at(-1)[1].headers).not.toHaveProperty('X-Partner-Id')
+      await keyed.quoteSwidge({
+        fromToken: USDT_ETH,
+        toToken: USDC_ARB,
+        toChain: 42161,
+        fromTokenAmount: 100000000n
+      })
+      const quoteCall = global.fetch.mock.calls.find(([url]) => url.endsWith('/v2/quote'))
+      expect(quoteCall[1].headers['X-Api-Key']).toBe('test-key')
+      expect(quoteCall[1].headers).not.toHaveProperty('X-Partner-Id')
     })
 
     test('should abort a hung request after the configured timeout', async () => {

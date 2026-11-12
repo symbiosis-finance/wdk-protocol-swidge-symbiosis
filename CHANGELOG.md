@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking:** the module authenticates with a Symbiosis partner API key
+  instead of a partner ID. The new `apiKey` configuration option is sent as
+  the `X-Api-Key` header with every request; the key carries your partner ID
+  and its rate limit. The `partnerId` option and the `DEFAULT_PARTNER_ID`
+  export are removed, and no `X-Partner-Id` header is sent any more. Without
+  a key, requests are limited per client IP at the default rate, and the API
+  may refuse quotes and swaps. The README explains how to get a key in the
+  partner dashboard.
+
 ## [1.3.0] - 2026-08-01
 
 ### Added

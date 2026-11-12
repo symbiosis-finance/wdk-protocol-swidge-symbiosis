@@ -113,7 +113,7 @@ new SymbiosisProtocol(account, {
   chain: 'Ethereum',          // required for quoting/execution: Symbiosis chain id or name of the account's chain
   apiUrl: 'https://api.symbiosis.finance/crosschain', // optional API override
   timeoutMs: 30000,           // Symbiosis API request timeout in milliseconds
-  partnerId: 'wdk',           // X-Partner-Id header sent to the Symbiosis API (registered partners get higher rate limits)
+  apiKey: process.env.SYMBIOSIS_API_KEY, // your Symbiosis partner API key, sent as X-Api-Key (see "API key" below)
   defaultSlippage: 0.02,      // default slippage when options.slippage is omitted
   partnerAddress: '0x...',    // registered Symbiosis partner address (protocol fee share)
   refundAddress: 'bc1q...',   // default refund address for deposit-address routes (e.g. from Bitcoin)
@@ -122,6 +122,20 @@ new SymbiosisProtocol(account, {
   maxProtocolFeeBps: 100
 })
 ```
+
+### API key
+
+Pass your Symbiosis partner API key as `apiKey`. The module sends it in the `X-Api-Key` header with every request. The key carries your partner ID: it gives your partner rate limit and attributes the swaps you build to you. Without a key, requests are limited per client IP at the default rate, and the API may refuse quotes and swaps.
+
+To get a key:
+
+1. Open the [partner dashboard](https://explorer.symbiosis.finance/partners) and connect your wallet.
+2. Create an application. Its name becomes your partner ID.
+3. On the **API keys** tab, create a key and copy it. The key is shown only once.
+
+A new key works within a minute. You can rotate a key in the dashboard: the old one keeps working for 24 hours unless you revoke it at once. If you cannot use the dashboard, contact [Symbiosis support](https://docs.symbiosis.finance/user-guide-webapp/support). The API reference ([Swagger](https://api.symbiosis.finance/crosschain/docs/)) describes the key and the rate limits.
+
+Keep the key server-side: anyone who reads it can spend your rate limit. Don't ship it in a browser or mobile app. In a client app, point `apiUrl` at your own backend that forwards requests to `https://api.symbiosis.finance/crosschain` and adds the `X-Api-Key` header.
 
 ### Token and chain identifiers
 
