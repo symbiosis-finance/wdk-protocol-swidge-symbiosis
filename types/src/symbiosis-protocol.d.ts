@@ -274,10 +274,12 @@ export type SymbiosisProtocolConfig = {
      */
     timeoutMs?: number;
     /**
-     * - The `X-Partner-Id` header value identifying the integrator to the
-     * Symbiosis API; registered partners get higher API rate limits (defaults to `'wdk'`).
+     * - The Symbiosis partner API key, sent as the `X-Api-Key` header with every
+     * request. It identifies your partner ID and gives your partner rate limit; without it requests are
+     * limited per client IP at the default rate, and quotes and swaps may be refused. Create one in the
+     * partner dashboard: https://explorer.symbiosis.finance/partners.
      */
-    partnerId?: string;
+    apiKey?: string;
     /**
      * - The default slippage tolerance as a decimal (e.g., 0.01 for 1%). Defaults to 0.02.
      */

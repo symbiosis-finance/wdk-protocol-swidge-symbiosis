@@ -7,6 +7,7 @@
 //   SEED     BIP-39 seed phrase of the wallet.
 //   RPC_URL  Source chain RPC endpoint (required with EXECUTE=1).
 //   EXECUTE  Set to exactly 1 to send the transactions; anything else = quote only, nothing is signed.
+//   SYMBIOSIS_API_KEY  Your Symbiosis partner API key (sent as X-Api-Key); see "API key" in the README.
 //
 //   Chains are Symbiosis names or numeric ids (see getSupportedChains()), tokens
 //   are symbols or addresses (see getSupportedTokens()), the amount is human-readable.
@@ -29,7 +30,7 @@ if (!process.env.SEED || !fromChain || !toChain || !amountArg) {
 
 const wallet = new WalletManagerEvm(process.env.SEED, { provider: process.env.RPC_URL })
 const account = await wallet.getAccount(0)
-const symbiosis = new SymbiosisProtocol(account, { chain: fromChain })
+const symbiosis = new SymbiosisProtocol(account, { chain: fromChain, apiKey: process.env.SYMBIOSIS_API_KEY })
 
 // Resolves a token by symbol or address from the Symbiosis catalog of a chain.
 async function resolveToken (chain, id) {

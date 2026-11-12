@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-11-12
+
+### Changed
+
+- **Breaking:** the module authenticates with a Symbiosis partner API key
+  instead of a partner ID. The new `apiKey` configuration option is sent as
+  the `X-Api-Key` header with every request; the key carries your partner ID
+  and its rate limit. The `partnerId` option and the `DEFAULT_PARTNER_ID`
+  export are removed, and no `X-Partner-Id` header is sent any more. Without
+  a key, requests are limited per client IP at the default rate, and the API
+  may refuse quotes and swaps. The README explains how to get a key in the
+  partner dashboard.
+
 ## [1.3.0] - 2026-08-01
 
 ### Added
@@ -129,6 +142,7 @@ _First published release of the 1.1 line (1.1.0 was not published to npm)._
   class. Supports EVM, TON and Bitcoin source-route execution; quote-only for
   Tron and Solana source routes.
 
+[2.0.0]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/symbiosis-finance/wdk-protocol-swidge-symbiosis/compare/v1.1.1...v1.1.2

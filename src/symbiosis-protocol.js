@@ -78,8 +78,10 @@ import {
  *   (e.g., `1`, `'Ethereum'`, `'TON'`, `'Bitcoin'`). Required to quote and execute swidge operations.
  * @property {string} [apiUrl] - The base URL of the Symbiosis API (defaults to `https://api.symbiosis.finance/crosschain`).
  * @property {number} [timeoutMs] - The Symbiosis API request timeout in milliseconds (defaults to 30,000).
- * @property {string} [partnerId] - The `X-Partner-Id` header value identifying the integrator to the
- *   Symbiosis API; registered partners get higher API rate limits (defaults to `'wdk'`).
+ * @property {string} [apiKey] - The Symbiosis partner API key, sent as the `X-Api-Key` header with every
+ *   request. It identifies your partner ID and gives your partner rate limit; without it requests are
+ *   limited per client IP at the default rate, and quotes and swaps may be refused. Create one in the
+ *   partner dashboard: https://explorer.symbiosis.finance/partners.
  * @property {number} [defaultSlippage] - The default slippage tolerance as a decimal (e.g., 0.01 for 1%). Defaults to 0.02.
  * @property {string} [partnerAddress] - The EVM address of a registered Symbiosis partner to receive a share of the protocol fee.
  * @property {string} [refundAddress] - The default refund address for deposit-address routes (e.g., swaps from Bitcoin).
